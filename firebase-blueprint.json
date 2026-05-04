@@ -1,0 +1,130 @@
+{
+  "entities": {
+    "Branch": {
+      "title": "Branch",
+      "description": "A mining branch location",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product tracked in the system",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "unit": { "type": "string" },
+        "price": { "type": "number" },
+        "costPrice": { "type": "number" }
+      },
+      "required": ["id", "name", "unit", "price"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Stock count of a product at a specific branch",
+      "type": "object",
+      "properties": {
+        "branchId": { "type": "string" },
+        "productId": { "type": "string" },
+        "stock": { "type": "number" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["branchId", "productId", "stock", "lastUpdated"]
+    },
+    "Transaction": {
+      "title": "Stock Transaction",
+      "description": "Log of stock additions or removals",
+      "type": "object",
+      "properties": {
+        "branchId": { "type": "string" },
+        "productId": { "type": "string" },
+        "type": { "type": "string", "enum": ["add", "remove", "transfer"] },
+        "amount": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["branchId", "productId", "type", "amount", "timestamp", "userId"]
+    },
+    "Order": {
+      "title": "Internal Order",
+      "description": "An internal request for stock dispatch",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "branchId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "dispatched", "received", "cancelled"] },
+        "items": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "dispatchedAt": { "type": "string", "format": "date-time" },
+        "receivedAt": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["branchId", "status", "items", "createdAt"]
+    },
+    "Sale": {
+      "title": "POS Sale",
+      "description": "A customer sale transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "branchId": { "type": "string" },
+        "items": { "type": "array" },
+        "total": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" }
+      },
+      "required": ["branchId", "items", "total", "timestamp", "userId"]
+    },
+    "Transfer": {
+      "title": "Stock Transfer",
+      "description": "Movement of stock between branches",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fromBranchId": { "type": "string" },
+        "toBranchId": { "type": "string" },
+        "items": { "type": "array" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["fromBranchId", "toBranchId", "items", "timestamp", "userId"]
+    }
+  },
+  "firestore": {
+    "/branches": {
+      "schema": "Branch",
+      "description": "List of available branches"
+    },
+    "/products": {
+      "schema": "Product",
+      "description": "List of trackable products"
+    },
+    "/inventory": {
+      "schema": "InventoryItem",
+      "description": "Current stock levels per branch and product"
+    },
+    "/transactions": {
+      "schema": "Transaction",
+      "description": "History of all stock movements"
+    },
+    "/orders": {
+      "schema": "Order",
+      "description": "Internal dispatch orders"
+    },
+    "/sales": {
+      "schema": "Sale",
+      "description": "Customer sales records"
+    },
+    "/transfers": {
+      "schema": "Transfer",
+      "description": "Records of stock transfers between branches"
+    }
+  }
+}

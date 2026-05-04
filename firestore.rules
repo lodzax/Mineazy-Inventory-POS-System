@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Branches: Usually static or admin managed, but for simplicity let's allow signed in users to read
+    match /branches/{branchId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn(); // In a real app, only admins
+    }
+
+    // Products: Same as branches
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn(); // In a real app, only admins
+    }
+
+    // Inventory: Key operational data
+    match /inventory/{inventoryId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() 
+        && incoming().stock is number 
+        && incoming().branchId is string
+        && incoming().productId is string
+        && incoming().lastUpdated == request.time;
+    }
+
+    // Transactions: Audit log
+    match /transactions/{transactionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().userId == request.auth.uid
+        && incoming().timestamp == request.time
+        && incoming().amount is number
+        && incoming().type in ['add', 'remove', 'transfer'];
+    }
+
+    // Orders: Internal requests
+    match /orders/{orderId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().branchId is string
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time;
+      allow update: if isSignedIn()
+        && (
+          // Allow status transitions (pending -> dispatched -> received)
+          (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'dispatchedAt', 'receivedAt'])) ||
+          // Allow full updates for pending orders
+          (existing().status == 'pending')
+        );
+    }
+
+    // Sales: Customer transactions
+    match /sales/{saleId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().branchId is string
+        && incoming().total is number
+        && incoming().timestamp == request.time
+        && incoming().userId == request.auth.uid;
+    }
+
+    // Transfers: Multi-branch movements
+    match /transfers/{transferId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().fromBranchId is string
+        && incoming().toBranchId is string
+        && incoming().timestamp == request.time
+        && incoming().userId == request.auth.uid;
+    }
+  }
+}
