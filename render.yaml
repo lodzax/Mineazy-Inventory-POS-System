@@ -1,11 +1,16 @@
 services:
-  - type: web
+  - type: static_site
     name: mineazy-inventory
-    env: static
     buildCommand: npm install && npm run build
     staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_SUPABASE_URL
-        fromConfigVar: SUPABASE_URL
+        sync: false
       - key: VITE_SUPABASE_ANON_KEY
-        fromConfigVar: SUPABASE_ANON_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
