@@ -9,18 +9,20 @@ interface InventoryTableProps {
   branches: any[];
   products: any[];
   onUpdate: (branchId: string, productId: string, amount: number, type: 'add' | 'remove', notes: string) => void;
-  updateProduct: (id: string, updates: { price?: number, costPrice?: number, unit?: string, name?: string }) => void;
+  updateProduct: (id: string, updates: { price?: number, cost_price?: number, unit?: string, name?: string }) => void;
+  profile: any;
 }
 
-export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct }: InventoryTableProps) {
-  const [selectedBranch, setSelectedBranch] = useState<string>('all');
+export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, profile }: InventoryTableProps) {
+  const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
+  const [selectedBranch, setSelectedBranch] = useState<string>(isLimited ? (profile?.branch_id || branches[0]?.id) : 'all');
   const [search, setSearch] = useState('');
   const [manualUpdate, setManualUpdate] = useState<{ branchId: string, productId: string, type: 'add' | 'remove' } | null>(null);
   const [manualAmount, setManualAmount] = useState<string>('');
   const [manualNotes, setManualNotes] = useState<string>('');
   const [qrModal, setQrModal] = useState<{ branchId: string, productId: string } | null>(null);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', unit: '', price: '', costPrice: '' });
+  const [editForm, setEditForm] = useState({ name: '', unit: '', price: '', cost_price: '' });
 
   const filteredBranches = branches.filter(b => 
     (selectedBranch === 'all' || b.id === selectedBranch) &&
@@ -44,7 +46,7 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
         name: editForm.name,
         unit: editForm.unit,
         price: parseFloat(editForm.price),
-        costPrice: parseFloat(editForm.costPrice)
+        cost_price: parseFloat(editForm.cost_price)
       });
       setEditingProduct(null);
     }
@@ -115,8 +117,8 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                       type="number"
                       required
                       step="0.01"
-                      value={editForm.costPrice}
-                      onChange={(e) => setEditForm({...editForm, costPrice: e.target.value})}
+                      value={editForm.cost_price}
+                      onChange={(e) => setEditForm({...editForm, cost_price: e.target.value})}
                       className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono font-bold"
                     />
                   </div>
@@ -234,10 +236,11 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
 
         <select 
           value={selectedBranch}
+          disabled={isLimited}
           onChange={(e) => setSelectedBranch(e.target.value)}
-          className="w-full md:w-56 px-6 py-4 bg-white border border-ink/5 rounded-2xl font-sans text-sm font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01]"
+          className="w-full md:w-56 px-6 py-4 bg-white border border-ink/5 rounded-2xl font-sans text-sm font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <option value="all">Global Matrix</option>
+          {!isLimited && <option value="all">Global Matrix</option>}
           {branches.map(b => (
             <option key={b.id} value={b.id}>{b.name}</option>
           ))}
@@ -257,21 +260,23 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                         <span className="text-ink text-xs">{p.name}</span>
                         <span className="text-primary tracking-tighter normal-case font-serif text-[11px] italic font-medium">{p.unit} unit</span>
                       </div>
-                      <button 
-                        onClick={() => {
-                          setEditingProduct(p);
-                          setEditForm({ 
-                            name: p.name, 
-                            unit: p.unit, 
-                            price: (p.price || 0).toString(), 
-                            costPrice: (p.costPrice || 0).toString() 
-                          });
-                        }}
-                        className="p-2 hover:bg-primary/10 rounded-xl text-primary transition-all active:scale-90"
-                        title="Edit Resource Details"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
+                      {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                        <button 
+                          onClick={() => {
+                            setEditingProduct(p);
+                            setEditForm({ 
+                              name: p.name, 
+                              unit: p.unit, 
+                              price: (p.price || 0).toString(), 
+                              cost_price: (p.cost_price || 0).toString() 
+                            });
+                          }}
+                          className="p-2 hover:bg-primary/10 rounded-xl text-primary transition-all active:scale-90"
+                          title="Edit Resource Details"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                     <div className="flex gap-4">
                       <div className="flex flex-col">
@@ -280,7 +285,7 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                       </div>
                       <div className="w-px h-8 bg-ink/5" />
                       <div className="flex flex-col">
-                        <span className="text-ink/60 font-mono text-base font-bold tracking-tighter">${p.costPrice || 0}</span>
+                        <span className="text-ink/60 font-mono text-base font-bold tracking-tighter">${p.cost_price || 0}</span>
                         <span className="text-[9px] text-ink/30 tracking-widest">Asset Cost</span>
                       </div>
                     </div>
@@ -298,7 +303,7 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                     </div>
                   </td>
                   {products.map(product => {
-                    const item = inventory.find(i => i.branchId === branch.id && i.productId === product.id);
+                    const item = inventory.find(i => i.branch_id === branch.id && i.product_id === product.id);
                     const stock = item ? item.stock : 0;
                     const isCritical = stock <= 5;
                     return (

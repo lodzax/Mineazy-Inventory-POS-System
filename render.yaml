@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: mineazy-inventory
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_SUPABASE_URL
+        fromConfigVar: SUPABASE_URL
+      - key: VITE_SUPABASE_ANON_KEY
+        fromConfigVar: SUPABASE_ANON_KEY

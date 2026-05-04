@@ -7,16 +7,18 @@ interface TransferViewProps {
   products: any[];
   inventory: any[];
   transferStock: (from: string, to: string, items: any[], notes: string) => Promise<void>;
+  profile: any;
 }
 
-export default function TransferView({ branches, products, inventory, transferStock }: TransferViewProps) {
-  const [fromBranch, setFromBranch] = useState(branches[0]?.id || '');
-  const [toBranch, setToBranch] = useState(branches[1]?.id || '');
+export default function TransferView({ branches, products, inventory, transferStock, profile }: TransferViewProps) {
+  const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
+  const [fromBranch, setFromBranch] = useState(profile?.branch_id || branches[0]?.id || '');
+  const [toBranch, setToBranch] = useState(branches.find(b => b.id !== (profile?.branch_id || branches[0]?.id))?.id || '');
   const [items, setItems] = useState<{ productId: string, quantity: number }[]>([]);
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fromBranchInventory = inventory.filter(i => i.branchId === fromBranch);
+  const fromBranchInventory = inventory.filter(i => i.branch_id === fromBranch);
 
   const addItem = () => {
     if (products.length > 0) {
@@ -38,7 +40,7 @@ export default function TransferView({ branches, products, inventory, transferSt
     
     // Validate stock
     for (const item of items) {
-      const stock = fromBranchInventory.find(i => i.productId === item.productId)?.stock || 0;
+      const stock = fromBranchInventory.find(i => i.product_id === item.productId)?.stock || 0;
       if (item.quantity > stock) {
         alert(`Insufficient stock for ${products.find(p => p.id === item.productId)?.name}`);
         return;
@@ -81,8 +83,9 @@ export default function TransferView({ branches, products, inventory, transferSt
               </label>
               <select 
                 value={fromBranch}
+                disabled={isLimited}
                 onChange={(e) => setFromBranch(e.target.value)}
-                className="w-full bg-background border border-ink/5 rounded-[1.5rem] px-6 py-5 focus:ring-4 focus:ring-primary/5 outline-none font-bold text-xs uppercase tracking-widest text-ink appearance-none cursor-pointer"
+                className="w-full bg-background border border-ink/5 rounded-[1.5rem] px-6 py-5 focus:ring-4 focus:ring-primary/5 outline-none font-bold text-xs uppercase tracking-widest text-ink appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {branches.map(b => (
                   <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>
@@ -144,7 +147,7 @@ export default function TransferView({ branches, products, inventory, transferSt
                 <tbody className="divide-y divide-ink/[0.03]">
                   {items.map((item, index) => {
                     const product = products.find(p => p.id === item.productId);
-                    const stock = fromBranchInventory.find(i => i.productId === item.productId)?.stock || 0;
+                    const stock = fromBranchInventory.find(i => i.product_id === item.productId)?.stock || 0;
                     return (
                       <tr key={index} className="group hover:bg-white/40 transition-colors">
                         <td className="px-8 py-6">

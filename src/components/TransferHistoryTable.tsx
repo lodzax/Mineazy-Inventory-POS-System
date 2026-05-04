@@ -13,18 +13,18 @@ export default function TransferHistoryTable({ transfers, branches, products }: 
   const [branchFilter, setBranchFilter] = useState('all');
 
   const filteredTransfers = transfers.filter(transfer => {
-    const fromBranch = branches.find(b => b.id === transfer.fromBranchId);
-    const toBranch = branches.find(b => b.id === transfer.toBranchId);
+    const fromBranch = branches.find(b => b.id === transfer.from_branch_id);
+    const toBranch = branches.find(b => b.id === transfer.to_branch_id);
     const matchesSearch = fromBranch?.name.toLowerCase().includes(search.toLowerCase()) || 
                           toBranch?.name.toLowerCase().includes(search.toLowerCase()) ||
                           transfer.id.toLowerCase().includes(search.toLowerCase());
     const matchesBranch = branchFilter === 'all' || 
-                          transfer.fromBranchId === branchFilter || 
-                          transfer.toBranchId === branchFilter;
+                          transfer.from_branch_id === branchFilter || 
+                          transfer.to_branch_id === branchFilter;
     return matchesSearch && matchesBranch;
   });
 
-  const sortedTransfers = [...filteredTransfers].sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+  const sortedTransfers = [...filteredTransfers].sort((a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0));
 
   return (
     <div className="space-y-8 pb-12">
@@ -69,12 +69,12 @@ export default function TransferHistoryTable({ transfers, branches, products }: 
             </thead>
             <tbody className="divide-y divide-ink/[0.03]">
               {sortedTransfers.map((transfer) => {
-                const fromBranch = branches.find(b => b.id === transfer.fromBranchId);
-                const toBranch = branches.find(b => b.id === transfer.toBranchId);
+                const fromBranch = branches.find(b => b.id === transfer.from_branch_id);
+                const toBranch = branches.find(b => b.id === transfer.to_branch_id);
                 return (
                   <tr key={transfer.id} className="text-xs hover:bg-background transition-all group">
                     <td className="px-10 py-6 font-mono text-[10px] font-bold text-ink/40 group-hover:text-ink">
-                      {transfer.timestamp ? new Date(transfer.timestamp.toMillis()).toLocaleString() : 'PENDING'}
+                      {transfer.timestamp ? new Date(transfer.timestamp).toLocaleString() : 'PENDING'}
                     </td>
                     <td className="px-10 py-6">
                       <div className="flex items-center gap-4">

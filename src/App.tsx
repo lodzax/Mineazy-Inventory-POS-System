@@ -9,13 +9,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  onAuthStateChanged, 
-  signOut,
-  User
-} from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -39,7 +32,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { auth, db } from './lib/firebase';
+import { supabase } from './lib/supabase';
 import { useInventory } from './hooks/useInventory';
 import Dashboard from './components/Dashboard';
 import InventoryTable from './components/InventoryTable';
@@ -51,7 +44,6 @@ import SalesHistoryTable from './components/SalesHistoryTable';
 import TransferView from './components/TransferView';
 import TransferHistoryTable from './components/TransferHistoryTable';
 import BranchesView from './components/BranchesView';
-import { doc, setDoc } from 'firebase/firestore';
 
 const branches = [
   "Belmont", "Junkshop", "Tongogara", "Esigodini 1", "Esigodini 2", 
@@ -60,20 +52,25 @@ const branches = [
 ];
 
 const products = [
-  { id: '30g-mercury', name: '30g Mercury', unit: 'pcs', price: 23, costPrice: 15.15 },
-  { id: '500g-mercury', name: '500g Mercury', unit: 'pcs', price: 325, costPrice: 250 },
-  { id: '1kg-mercury', name: '1kg Mercury', unit: 'pcs', price: 650, costPrice: 500 },
-  { id: 'batteries', name: 'Batteries', unit: 'pcs', price: 2, costPrice: 1.7 },
-  { id: 'beaters', name: 'Beaters', unit: 'pcs', price: 2.5, costPrice: 2.21 }
+  { id: '30g-mercury', name: '30g Mercury', unit: 'pcs', price: 23, cost_price: 15.15 },
+  { id: '500g-mercury', name: '500g Mercury', unit: 'pcs', price: 325, cost_price: 250 },
+  { id: '1kg-mercury', name: '1kg Mercury', unit: 'pcs', price: 650, cost_price: 500 },
+  { id: 'batteries', name: 'Batteries', unit: 'pcs', price: 2, cost_price: 1.7 },
+  { id: 'beaters', name: 'Beaters', unit: 'pcs', price: 2.5, cost_price: 2.21 }
 ];
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders' | 'orders_history' | 'pos' | 'sales_history' | 'transfers' | 'transfers_history' | 'branches'>('dashboard');
   const [showScanner, setShowScanner] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [registrationRole, setRegistrationRole] = useState<'Administrator' | 'Manager' | 'Supervisor' | 'Cashier' | 'Warehouse'>('Cashier');
+  const [registrationBranch, setRegistrationBranch] = useState<string>('');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const { 
     inventory, 
@@ -95,7 +92,10 @@ export default function App() {
     addBranch,
     updateBranch,
     deleteBranch,
-    loading: dataLoading 
+    loading: dataLoading,
+    authLoading,
+    user,
+    profile // Destructure profile
   } = useInventory();
 
   const [newProductName, setNewProductName] = useState('');
@@ -104,13 +104,16 @@ export default function App() {
   const [newProductCost, setNewProductCost] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
 
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthLoading(false);
-    });
-    return unsub;
-  }, []);
+    if (profile?.role === 'Cashier' && activeTab !== 'pos') {
+      setActiveTab('pos');
+    } else if (profile?.role === 'Supervisor' && activeTab === 'dashboard') {
+      setActiveTab('inventory');
+    } else if (profile?.role === 'Warehouse' && (activeTab === 'dashboard' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
+      setActiveTab('orders');
+    }
+  }, [profile, activeTab]);
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,13 +127,43 @@ export default function App() {
     }
   };
 
-  const login = async () => {
-    const provider = new GoogleAuthProvider();
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setIsAuthenticating(true);
     try {
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error("Login failed", err);
+      if (authMode === 'signin') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+        if (authError) throw authError;
+
+        if (authData.user) {
+          // Use upsert to handle the trigger-created profile
+          const { error: profileError } = await supabase.from('profiles').upsert({
+            id: authData.user.id,
+            email,
+            role: registrationRole,
+            branch_id: (registrationRole === 'Supervisor' || registrationRole === 'Cashier') ? (registrationBranch || null) : null
+          });
+          if (profileError) {
+            console.error("Profile update failed", profileError);
+          }
+        }
+
+        alert("Registration successful! You can now sign in.");
+        setAuthMode('signin');
+      }
+    } catch (err: any) {
+      setAuthError(err.message || "Authentication failed");
+    } finally {
+      setIsAuthenticating(false);
     }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
   };
 
   const seedData = async () => {
@@ -138,10 +171,10 @@ export default function App() {
     try {
       for (const name of branches) {
         const id = name.toLowerCase().replace(/\s+/g, '-');
-        await setDoc(doc(db, 'branches', id), { id, name });
+        await supabase.from('branches').upsert({ id, name });
       }
       for (const product of products) {
-        await setDoc(doc(db, 'products', product.id), product);
+        await supabase.from('products').upsert(product);
       }
       alert("System initialized successfully.");
     } catch (err) {
@@ -155,6 +188,14 @@ export default function App() {
     const parts = data.split(':');
     if (parts.length === 4) {
       const [bid, pid, amt, type] = parts;
+      
+      // Enforce branch isolation for limited roles
+      const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
+      if (isLimited && profile?.branch_id && bid !== profile.branch_id) {
+        alert("Access Denied: You can only update stock for your assigned branch.");
+        return;
+      }
+
       updateStocks(bid, pid, parseFloat(amt), type as any, 'Scanned via QR Code');
       setShowScanner(false);
       alert(`Updated ${pid} at ${bid}`);
@@ -186,20 +227,118 @@ export default function App() {
             <Database className="w-64 h-64 text-primary" />
           </div>
           
-          <div className="relative z-10 text-center">
-            <h1 className="text-6xl font-serif font-light mb-2 text-ink">Mineazy</h1>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-primary mb-10">Stock Management Portal</p>
-            
-            <button 
-              onClick={login}
-              className="w-full py-4 bg-ink text-white rounded-2xl flex items-center justify-center gap-4 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 group"
-            >
-              <div className="w-6 h-6 bg-white rounded-full p-1 flex items-center justify-center">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-4 h-4" />
+          <div className="relative z-10">
+            <div className="text-center mb-10">
+              <div className="flex justify-center mb-8">
+                <img 
+                  src="/logo.png" 
+                  alt="MMS Mineazy Mining Solutions" 
+                  className="h-24 w-auto object-contain"
+                  onError={(e) => {
+                    // Fallback to a hidden state if image is missing
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
               </div>
-              <span className="font-bold uppercase tracking-widest text-xs">Sign in with Google</span>
-            </button>
-            <p className="mt-8 text-xs text-ink/40 font-mono italic">Protected access for authorized personnel only.</p>
+              <h1 className="text-6xl font-serif font-light mb-2 text-ink">Mineazy</h1>
+              <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-primary">Stock Management Portal</p>
+            </div>
+
+            <form onSubmit={handleAuth} className="space-y-6">
+              {authError && (
+                <div className="p-4 bg-danger/10 border border-danger/20 rounded-2xl text-danger text-xs font-mono text-center">
+                  {authError}
+                </div>
+              )}
+              
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Email Address</label>
+                <input 
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                  placeholder="name@company.com"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Password</label>
+                <input 
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {authMode === 'signup' && (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Assigned Role</label>
+                    <select
+                      required
+                      value={registrationRole}
+                      onChange={(e) => setRegistrationRole(e.target.value as any)}
+                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                    >
+                      <option value="Cashier">Cashier</option>
+                      <option value="Supervisor">Supervisor</option>
+                      <option value="Warehouse">Warehouse</option>
+                      <option value="Manager">Manager</option>
+                      <option value="Administrator">Administrator</option>
+                    </select>
+                  </div>
+
+                  {(registrationRole === 'Supervisor' || registrationRole === 'Cashier') && (
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Home Branch</label>
+                      <select
+                        required
+                        value={registrationBranch}
+                        onChange={(e) => setRegistrationBranch(e.target.value)}
+                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                      >
+                        <option value="">Select Branch</option>
+                        {dbBranches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <button 
+                type="submit"
+                disabled={isAuthenticating}
+                className="w-full py-4 bg-ink text-white rounded-2xl flex items-center justify-center gap-4 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 group disabled:opacity-50 disabled:translate-y-0"
+              >
+                {isAuthenticating ? (
+                  <CircleGauge className="w-5 h-5 animate-spin" />
+                ) : (
+                  <span className="font-bold uppercase tracking-widest text-xs">
+                    {authMode === 'signin' ? 'Access System' : 'Create Account'}
+                  </span>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-8 text-center">
+              <button 
+                onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                className="text-xs text-primary font-bold uppercase tracking-widest hover:underline"
+              >
+                {authMode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+              </button>
+            </div>
+
+            <p className="mt-8 text-center text-[10px] text-ink/40 font-mono italic">
+              Protected access for authorized personnel only.
+            </p>
           </div>
         </motion.div>
       </div>
@@ -233,74 +372,101 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-2 overflow-y-auto custom-scrollbar pr-2">
+          {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+            <NavItem 
+              active={activeTab === 'dashboard'} 
+              onClick={() => setActiveTab('dashboard')} 
+              icon={<LayoutDashboard className="w-5 h-5" />} 
+              label="Live Reports" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role !== 'Cashier') && (
+            <NavItem 
+              active={activeTab === 'inventory'} 
+              onClick={() => setActiveTab('inventory')} 
+              icon={<Package className="w-5 h-5" />} 
+              label="Stocks Grid" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+            <NavItem 
+              active={activeTab === 'history'} 
+              onClick={() => setActiveTab('history')} 
+              icon={<History className="w-5 h-5" />} 
+              label="Transaction Logs" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+            <NavItem 
+              active={activeTab === 'pos'} 
+              onClick={() => setActiveTab('pos')} 
+              icon={<ShoppingCart className="w-5 h-5" />} 
+              label="Point of Sale" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+            <NavItem 
+              active={activeTab === 'sales_history'} 
+              onClick={() => setActiveTab('sales_history')} 
+              icon={<History className="w-5 h-5" />} 
+              label="Sales Records" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role !== 'Cashier') && (
+            <NavItem 
+              active={activeTab === 'transfers'} 
+              onClick={() => setActiveTab('transfers')} 
+              icon={<ArrowRightLeft className="w-5 h-5" />} 
+              label="Stock Transfers" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role !== 'Cashier') && (
+            <NavItem 
+              active={activeTab === 'transfers_history'} 
+              onClick={() => setActiveTab('transfers_history')} 
+              icon={<PackageCheck className="w-5 h-5" />} 
+              label="Transfer History" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role !== 'Cashier') && (
+            <NavItem 
+              active={activeTab === 'orders'} 
+              onClick={() => setActiveTab('orders')} 
+              icon={<ClipboardList className="w-5 h-5" />} 
+              label="Manage Orders" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role !== 'Cashier') && (
+            <NavItem 
+              active={activeTab === 'orders_history'} 
+              onClick={() => setActiveTab('orders_history')} 
+              icon={<PackageCheck className="w-5 h-5" />} 
+              label="Order History" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
+          {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+            <NavItem 
+              active={activeTab === 'branches'} 
+              onClick={() => setActiveTab('branches')} 
+              icon={<Building2 className="w-5 h-5" />} 
+              label="Branches" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
           <NavItem 
-            active={activeTab === 'dashboard'} 
-            onClick={() => setActiveTab('dashboard')} 
-            icon={<LayoutDashboard className="w-5 h-5" />} 
-            label="Live Reports" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'inventory'} 
-            onClick={() => setActiveTab('inventory')} 
-            icon={<Package className="w-5 h-5" />} 
-            label="Stocks Grid" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'history'} 
-            onClick={() => setActiveTab('history')} 
-            icon={<History className="w-5 h-5" />} 
-            label="Transaction Logs" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'pos'} 
-            onClick={() => setActiveTab('pos')} 
-            icon={<ShoppingCart className="w-5 h-5" />} 
-            label="Point of Sale" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'sales_history'} 
-            onClick={() => setActiveTab('sales_history')} 
-            icon={<History className="w-5 h-5" />} 
-            label="Sales Records" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'transfers'} 
-            onClick={() => setActiveTab('transfers')} 
-            icon={<ArrowRightLeft className="w-5 h-5" />} 
-            label="Stock Transfers" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'transfers_history'} 
-            onClick={() => setActiveTab('transfers_history')} 
-            icon={<PackageCheck className="w-5 h-5" />} 
-            label="Transfer History" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'orders'} 
-            onClick={() => setActiveTab('orders')} 
-            icon={<ClipboardList className="w-5 h-5" />} 
-            label="Manage Orders" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'orders_history'} 
-            onClick={() => setActiveTab('orders_history')} 
-            icon={<PackageCheck className="w-5 h-5" />} 
-            label="Order History" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={activeTab === 'branches'} 
-            onClick={() => setActiveTab('branches')} 
-            icon={<Building2 className="w-5 h-5" />} 
-            label="Branches" 
+            active={false} 
+            onClick={() => setShowScanner(true)} 
+            icon={<QrCode className="w-5 h-5" />} 
+            label="QR Scanner" 
             collapsed={isSidebarCollapsed}
           />
         </nav>
@@ -317,7 +483,7 @@ export default function App() {
           <div className="space-y-1">
             <p className={`text-[9px] font-mono uppercase text-white/40 font-bold tracking-widest transition-opacity ${isSidebarCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'px-4 opacity-100'}`}>Account</p>
             <button 
-              onClick={() => signOut(auth)}
+              onClick={logout}
               className={`flex items-center gap-3 py-3 text-danger/80 hover:bg-danger/10 hover:text-danger rounded-xl transition-all w-full text-left font-bold text-xs uppercase tracking-wider ${isSidebarCollapsed ? 'justify-center' : 'px-4'}`}
             >
               <LogOut className="w-4 h-4" />
@@ -362,69 +528,95 @@ export default function App() {
                 <button onClick={() => setIsSidebarOpen(false)} className="p-2 bg-white/10 rounded-full"><X className="w-5 h-5 text-white" /></button>
               </div>
               <nav className="flex-1 space-y-1.5">
+                {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                  <NavItem 
+                    active={activeTab === 'dashboard'} 
+                    onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }} 
+                    icon={<LayoutDashboard className="w-5 h-5" />} 
+                    label="Reports" 
+                  />
+                )}
+                {(profile?.role !== 'Cashier') && (
+                  <NavItem 
+                    active={activeTab === 'inventory'} 
+                    onClick={() => { setActiveTab('inventory'); setIsSidebarOpen(false); }} 
+                    icon={<Package className="w-5 h-5" />} 
+                    label="Inventory" 
+                  />
+                )}
+                {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                  <NavItem 
+                    active={activeTab === 'history'} 
+                    onClick={() => { setActiveTab('history'); setIsSidebarOpen(false); }} 
+                    icon={<History className="w-5 h-5" />} 
+                    label="Transactions" 
+                  />
+                )}
+                {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+                  <NavItem 
+                    active={activeTab === 'pos'} 
+                    onClick={() => { setActiveTab('pos'); setIsSidebarOpen(false); }} 
+                    icon={<ShoppingCart className="w-5 h-5" />} 
+                    label="POS System" 
+                  />
+                )}
+                {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+                  <NavItem 
+                    active={activeTab === 'sales_history'} 
+                    onClick={() => { setActiveTab('sales_history'); setIsSidebarOpen(false); }} 
+                    icon={<History className="w-5 h-5" />} 
+                    label="Sales History" 
+                  />
+                )}
+                {(profile?.role !== 'Cashier') && (
+                  <NavItem 
+                    active={activeTab === 'transfers'} 
+                    onClick={() => { setActiveTab('transfers'); setIsSidebarOpen(false); }} 
+                    icon={<ArrowRightLeft className="w-5 h-5" />} 
+                    label="Transfers" 
+                  />
+                )}
+                {(profile?.role !== 'Cashier') && (
+                  <NavItem 
+                    active={activeTab === 'transfers_history'} 
+                    onClick={() => { setActiveTab('transfers_history'); setIsSidebarOpen(false); }} 
+                    icon={<PackageCheck className="w-5 h-5" />} 
+                    label="Transfer Logs" 
+                  />
+                )}
+                {(profile?.role !== 'Cashier') && (
+                  <NavItem 
+                    active={activeTab === 'orders'} 
+                    onClick={() => { setActiveTab('orders'); setIsSidebarOpen(false); }} 
+                    icon={<ClipboardList className="w-5 h-5" />} 
+                    label="Orders" 
+                  />
+                )}
+                {(profile?.role !== 'Cashier') && (
+                  <NavItem 
+                    active={activeTab === 'orders_history'} 
+                    onClick={() => { setActiveTab('orders_history'); setIsSidebarOpen(false); }} 
+                    icon={<PackageCheck className="w-5 h-5" />} 
+                    label="Order History" 
+                  />
+                )}
+                {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                  <NavItem 
+                    active={activeTab === 'branches'} 
+                    onClick={() => { setActiveTab('branches'); setIsSidebarOpen(false); }} 
+                    icon={<Building2 className="w-5 h-5" />} 
+                    label="Branches" 
+                  />
+                )}
                 <NavItem 
-                  active={activeTab === 'dashboard'} 
-                  onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }} 
-                  icon={<LayoutDashboard className="w-5 h-5" />} 
-                  label="Reports" 
-                />
-                <NavItem 
-                  active={activeTab === 'inventory'} 
-                  onClick={() => { setActiveTab('inventory'); setIsSidebarOpen(false); }} 
-                  icon={<Package className="w-5 h-5" />} 
-                  label="Inventory" 
-                />
-                <NavItem 
-                  active={activeTab === 'history'} 
-                  onClick={() => { setActiveTab('history'); setIsSidebarOpen(false); }} 
-                  icon={<History className="w-5 h-5" />} 
-                  label="Transactions" 
-                />
-                <NavItem 
-                  active={activeTab === 'pos'} 
-                  onClick={() => { setActiveTab('pos'); setIsSidebarOpen(false); }} 
-                  icon={<ShoppingCart className="w-5 h-5" />} 
-                  label="POS System" 
-                />
-                <NavItem 
-                  active={activeTab === 'sales_history'} 
-                  onClick={() => { setActiveTab('sales_history'); setIsSidebarOpen(false); }} 
-                  icon={<History className="w-5 h-5" />} 
-                  label="Sales History" 
-                />
-                <NavItem 
-                  active={activeTab === 'transfers'} 
-                  onClick={() => { setActiveTab('transfers'); setIsSidebarOpen(false); }} 
-                  icon={<ArrowRightLeft className="w-5 h-5" />} 
-                  label="Transfers" 
-                />
-                <NavItem 
-                  active={activeTab === 'transfers_history'} 
-                  onClick={() => { setActiveTab('transfers_history'); setIsSidebarOpen(false); }} 
-                  icon={<PackageCheck className="w-5 h-5" />} 
-                  label="Transfer Logs" 
-                />
-                <NavItem 
-                  active={activeTab === 'orders'} 
-                  onClick={() => { setActiveTab('orders'); setIsSidebarOpen(false); }} 
-                  icon={<ClipboardList className="w-5 h-5" />} 
-                  label="Orders" 
-                />
-                <NavItem 
-                  active={activeTab === 'orders_history'} 
-                  onClick={() => { setActiveTab('orders_history'); setIsSidebarOpen(false); }} 
-                  icon={<PackageCheck className="w-5 h-5" />} 
-                  label="Order History" 
-                />
-                <NavItem 
-                  active={activeTab === 'branches'} 
-                  onClick={() => { setActiveTab('branches'); setIsSidebarOpen(false); }} 
-                  icon={<Building2 className="w-5 h-5" />} 
-                  label="Branches" 
+                  active={false} 
+                  onClick={() => { setShowScanner(true); setIsSidebarOpen(false); }} 
+                  icon={<QrCode className="w-5 h-5" />} 
+                  label="QR Scanner" 
                 />
               </nav>
               <button 
-                onClick={() => signOut(auth)}
+                onClick={logout}
                 className="mt-auto flex items-center gap-3 px-4 py-3 text-red-500 font-medium"
               >
                 <LogOut className="w-4 h-4" />
@@ -624,6 +816,7 @@ export default function App() {
                   products={dbProducts} 
                   onUpdate={(bid, pid, amt, type, notes = '') => updateStocks(bid, pid, amt, type, notes)}
                   updateProduct={updateProduct}
+                  profile={profile}
                 />
               )}
               {activeTab === 'history' && (
@@ -638,6 +831,7 @@ export default function App() {
                   dispatchOrder={dispatchOrder}
                   cancelOrder={cancelOrder}
                   acknowledgeOrder={acknowledgeOrder}
+                  profile={profile}
                 />
               )}
               {activeTab === 'pos' && (
@@ -647,6 +841,7 @@ export default function App() {
                   inventory={inventory}
                   processSale={processSale}
                   user={user}
+                  profile={profile}
                 />
               )}
               {activeTab === 'sales_history' && (
@@ -662,6 +857,7 @@ export default function App() {
                   products={dbProducts}
                   inventory={inventory}
                   transferStock={transferStock}
+                  profile={profile}
                 />
               )}
               {activeTab === 'transfers_history' && (
@@ -731,7 +927,7 @@ function NavItem({ active, onClick, icon, label, collapsed }: { active: boolean,
 }
 
 function HistoryTable({ transactions, branches, products }: { transactions: any[], branches: any[], products: any[] }) {
-  const sorted = [...transactions].sort((a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis());
+  const sorted = [...transactions].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return (
     <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-xl shadow-ink/5">
@@ -748,17 +944,17 @@ function HistoryTable({ transactions, branches, products }: { transactions: any[
           </thead>
           <tbody className="divide-y divide-ink/[0.03]">
             {sorted.map((tx, idx) => {
-              const branch = branches.find(b => b.id === tx.branchId);
-              const product = products.find(p => p.id === tx.productId);
+              const branch = branches.find(b => b.id === tx.branch_id);
+              const product = products.find(p => p.id === tx.product_id);
               return (
                 <tr key={idx} className="text-sm hover:bg-background/50 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex flex-col">
                       <span className="font-mono text-[11px] text-ink/60 font-bold">
-                        {tx.timestamp ? new Date(tx.timestamp.toMillis()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                        {tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                       </span>
                       <span className="text-[10px] text-ink/30 font-mono">
-                        {tx.timestamp ? new Date(tx.timestamp.toMillis()).toLocaleDateString() : 'Pending'}
+                        {tx.timestamp ? new Date(tx.timestamp).toLocaleDateString() : 'Pending'}
                       </span>
                     </div>
                   </td>
@@ -772,10 +968,10 @@ function HistoryTable({ transactions, branches, products }: { transactions: any[
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full bg-primary/40" />
-                      <span className="font-bold text-ink/80 text-xs">{branch?.name || tx.branchId}</span>
+                      <span className="font-bold text-ink/80 text-xs">{branch?.name || tx.branch_id}</span>
                     </div>
                   </td>
-                  <td className="px-8 py-5 text-ink/70 text-xs font-medium">{product?.name || tx.productId}</td>
+                  <td className="px-8 py-5 text-ink/70 text-xs font-medium">{product?.name || tx.product_id}</td>
                   <td className={`px-8 py-5 text-right font-mono font-bold text-base tracking-tighter ${
                     tx.type === 'add' ? 'text-accent' : 'text-danger'
                   }`}>

@@ -12,10 +12,11 @@ import {
   Pie, 
   Cell,
   AreaChart,
-  Area
+  Area,
+  TooltipProps
 } from 'recharts';
 import { motion } from 'motion/react';
-import { TrendingUp, Package, MapPin, ClipboardList, AlertTriangle, Activity, ArrowUpRight, ShoppingCart, DollarSign, ArrowRightLeft } from 'lucide-react';
+import { TrendingUp, Package, MapPin, ClipboardList, AlertTriangle, Activity, ArrowUpRight, ShoppingCart, DollarSign, ArrowRightLeft, Layers } from 'lucide-react';
 
 interface DashboardProps {
   inventory: any[];
@@ -27,33 +28,81 @@ interface DashboardProps {
   transfers: any[];
 }
 
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-ink p-4 rounded-2xl border border-white/10 shadow-2xl backdrop-blur-md">
+        <p className="text-[10px] font-mono font-bold text-white/40 uppercase mb-2 tracking-widest">{label}</p>
+        <div className="space-y-1.5">
+          {payload.map((entry, index) => (
+            <div key={index} className="flex items-center justify-between gap-6">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: entry.color }} />
+                <span className="text-[11px] text-white/80 font-medium">{entry.name}:</span>
+              </div>
+              <span className="text-xs font-mono font-bold text-white">{entry.value}</span>
+            </div>
+          ))}
+        </div>
+        {payload.length > 1 && (
+          <div className="mt-2 pt-2 border-t border-white/5 flex justify-between items-center">
+            <span className="text-[10px] font-mono text-white/40 uppercase">Total:</span>
+            <span className="text-xs font-mono font-bold text-primary">
+              {payload.reduce((sum, entry) => sum + (Number(entry.value) || 0), 0)}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function Dashboard({ inventory, branches, products, orders, transactions, sales, transfers }: DashboardProps) {
+  const [activeSeries, setActiveSeries] = React.useState<string[]>([]);
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    // Add a slight delay to ensure parent layout is finished before Recharts calculates dimensions
+    const timer = setTimeout(() => setIsMounted(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Aggregate stock by product
-  const productStock = products.map(p => ({
+  const productStock = React.useMemo(() => products.map(p => ({
     name: p.name,
     stock: inventory
-      .filter(i => i.productId === p.id)
-      .reduce((sum, item) => sum + item.stock, 0)
-  }));
+      .filter(i => i.product_id === p.id)
+      .reduce((sum, item) => sum + Number(item.stock || 0), 0)
+  })), [products, inventory]);
 
   // Aggregate stock by branch
-  const branchStock = branches.map(b => {
+  const branchStock = React.useMemo(() => branches.map(b => {
     const data: any = { name: b.name };
     products.forEach(p => {
-      const item = inventory.find(i => i.branchId === b.id && i.productId === p.id);
-      data[p.name] = item ? item.stock : 0;
+      const item = inventory.find(i => i.branch_id === b.id && i.product_id === p.id);
+      data[p.name] = item ? Number(item.stock || 0) : 0;
     });
     return data;
-  });
+  }), [branches, products, inventory]);
+
+  const toggleSeries = (e: any) => {
+    const { dataKey } = e;
+    setActiveSeries(prev => 
+      prev.includes(dataKey) 
+        ? prev.filter(key => key !== dataKey) 
+        : [...prev, dataKey]
+    );
+  };
 
   // Critical Stock (Less than 5)
   const criticalStock = React.useMemo(() => {
     return inventory
-      .filter(i => i.stock <= 5)
+      .filter(i => Number(i.stock || 0) <= 5)
       .map(i => ({
-        branch: branches.find(b => b.id === i.branchId)?.name,
-        product: products.find(p => p.id === i.productId)?.name,
-        stock: i.stock
+        branch: branches.find(b => b.id === i.branch_id)?.name,
+        product: products.find(p => p.id === i.product_id)?.name,
+        stock: Number(i.stock || 0)
       }))
       .sort((a, b) => a.stock - b.stock);
   }, [inventory, branches, products]);
@@ -61,7 +110,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
   // Movement velocity (last 24h transactions)
   const recentMovementsCount = React.useMemo(() => {
     const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
-    return (transactions || []).filter(t => t.timestamp?.toMillis() > dayAgo).length;
+    return (transactions || []).filter(t => new Date(t.timestamp).getTime() > dayAgo).length;
   }, [transactions]);
 
   // Calculate trends for the last 7 days
@@ -74,7 +123,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
       const endOfDay = new Date(date.setHours(23, 59, 59, 999)).getTime();
       
       const dayCount = (transactions || []).filter(t => {
-        const ts = t.timestamp?.toMillis();
+        const ts = new Date(t.timestamp).getTime();
         return ts >= startOfDay && ts <= endOfDay;
       }).length;
 
@@ -229,37 +278,43 @@ export default function Dashboard({ inventory, branches, products, orders, trans
             <h3 className="font-serif font-medium text-2xl text-ink italic">Node Distribution</h3>
             <span className="text-[10px] font-mono uppercase text-ink/40 font-bold tracking-widest">Global Mesh</span>
           </div>
-          <div className="h-[350px] w-full min-h-0">
-            <ResponsiveContainer width="100%" height="100%" minHeight={350}>
-              <BarChart data={branchStock} layout="vertical" margin={{ left: 20, right: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
-                <XAxis type="number" hide />
-                <YAxis 
-                  dataKey="name" 
-                  type="category" 
-                  width={120} 
-                  tick={{ fontSize: 10, fill: '#64748B', fontWeight: 'bold', fontFamily: 'JetBrains Mono' }} 
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip 
-                  cursor={{fill: '#F8FAFC'}}
-                  contentStyle={{ backgroundColor: '#0F172A', border: 'none', borderRadius: '16px', fontSize: '11px', color: '#fff', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}
-                  itemStyle={{ color: '#fff' }}
-                />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '10px', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }} />
-                {products.map((p, idx) => (
-                  <Bar 
-                    key={p.id} 
-                    dataKey={p.name} 
-                    stackId="a" 
-                    fill={COLORS[idx % COLORS.length]} 
-                    radius={idx === products.length - 1 ? [0, 6, 6, 0] : [0, 0, 0, 0]}
-                    barSize={20}
+          <div className="h-[400px] w-full">
+            {isMounted && (
+              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100} debounce={50}>
+                <BarChart data={branchStock} layout="vertical" margin={{ left: 20, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} opacity={0.5} />
+                  <XAxis type="number" hide />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    width={100} 
+                    tick={{ fontSize: 9, fill: '#64748B', fontWeight: 'bold', fontFamily: 'JetBrains Mono' }} 
+                    axisLine={false}
+                    tickLine={false}
                   />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+                  <Tooltip 
+                    cursor={{fill: '#F8FAFC'}}
+                    content={<CustomTooltip />}
+                  />
+                  <Legend 
+                    iconType="circle" 
+                    onClick={toggleSeries}
+                    wrapperStyle={{ cursor: 'pointer', paddingTop: '20px', fontSize: '9px', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }} 
+                  />
+                  {products.map((p, idx) => (
+                    <Bar 
+                      key={p.id} 
+                      dataKey={p.name} 
+                      stackId="a" 
+                      fill={COLORS[idx % COLORS.length]} 
+                      hide={activeSeries.length > 0 && !activeSeries.includes(p.name)}
+                      radius={idx === products.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]}
+                      barSize={16}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </motion.div>
 
@@ -273,39 +328,39 @@ export default function Dashboard({ inventory, branches, products, orders, trans
             <h3 className="font-serif font-medium text-2xl text-ink italic">Concentration Hub</h3>
             <span className="text-[10px] font-mono uppercase text-ink/40 font-bold tracking-widest">Density Map</span>
           </div>
-          <div className="h-[350px] w-full min-h-0">
-            <ResponsiveContainer width="100%" height="100%" minHeight={350}>
-              <PieChart>
-                <Pie
-                  data={productStock}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={120}
-                  paddingAngle={4}
-                  dataKey="stock"
-                  stroke="none"
-                >
-                  {productStock.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={COLORS[index % COLORS.length]} 
-                    />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0F172A', border: 'none', borderRadius: '16px', fontSize: '11px', color: '#fff' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
-             {productStock.slice(0, 6).map((p, i) => (
-               <div key={i} className="flex items-center gap-2">
-                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                 <span className="text-[10px] font-mono font-bold text-ink/60 uppercase truncate">{p.name}</span>
-               </div>
-             ))}
+          <div className="h-[400px] w-full">
+            {isMounted && (
+              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100} debounce={50}>
+                <PieChart>
+                  <Pie
+                    data={productStock}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="60%"
+                    outerRadius="80%"
+                    paddingAngle={5}
+                    dataKey="stock"
+                    stroke="none"
+                  >
+                    {productStock.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={COLORS[index % COLORS.length]} 
+                        style={{ filter: 'drop-shadow(0px 4px 6px rgba(0,0,0,0.1))' }}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend 
+                    layout="horizontal" 
+                    verticalAlign="bottom" 
+                    align="center"
+                    iconType="circle"
+                    wrapperStyle={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold', paddingTop: '20px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </motion.div>
       </div>
@@ -370,7 +425,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
           <div className="space-y-8 relative z-10">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <p className="text-sm text-white/40 font-mono italic leading-relaxed">
-                Aggregating spectral data from {branches.length} endpoints. Network health optimal. Total system magnitude <span className="text-primary font-bold">{inventory.reduce((sum, i) => sum + i.stock, 0)} units</span> currently registered across node grid.
+                Aggregating spectral data from {branches.length} endpoints. Network health optimal. Total system magnitude <span className="text-primary font-bold">{inventory.reduce((sum, i) => sum + Number(i.stock || 0), 0)} units</span> currently registered across node grid.
               </p>
               <div className="flex justify-end items-end gap-1">
                  {movementTrends.map((t, i) => (
@@ -386,28 +441,38 @@ export default function Dashboard({ inventory, branches, products, orders, trans
               </div>
             </div>
 
-            <div className="h-[180px] w-full min-h-0 bg-white/[0.03] rounded-[2rem] p-4 border border-white/[0.05]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={movementTrends}>
-                  <defs>
-                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366F1" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#6366F1" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#0F172A', border: 'none', borderRadius: '12px', fontSize: '10px', color: '#fff' }}
-                  />
-                  <Area 
-                    type="stepAfter" 
-                    dataKey="count" 
-                    stroke="#6366F1" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorCount)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="h-[200px] w-full bg-white/[0.03] rounded-[2rem] p-4 border border-white/[0.05]">
+              {isMounted && (
+                <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={200} debounce={50}>
+                  <AreaChart data={movementTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366F1" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#6366F1" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <Tooltip content={<CustomTooltip />} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff" opacity={0.05} vertical={false} />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 9, fill: '#ffffff', opacity: 0.3, fontFamily: 'JetBrains Mono' }} 
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="count" 
+                      name="Transactions"
+                      stroke="#6366F1" 
+                      strokeWidth={4}
+                      fillOpacity={1} 
+                      fill="url(#colorCount)" 
+                      animationBegin={300}
+                      animationDuration={1500}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </motion.div>

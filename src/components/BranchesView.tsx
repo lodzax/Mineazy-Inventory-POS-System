@@ -38,20 +38,20 @@ export default function BranchesView({ branches, products, inventory, sales, add
   );
 
   const getBranchMetrics = (branchId: string) => {
-    const branchInventory = inventory.filter(i => i.branchId === branchId);
-    const branchSales = sales.filter(s => s.branchId === branchId);
+    const branchInventory = inventory.filter(i => i.branch_id === branchId);
+    const branchSales = sales.filter(s => s.branch_id === branchId);
     
-    const totalInventoryItems = branchInventory.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    const totalInventoryItems = branchInventory.reduce((sum, item) => sum + (item.stock || 0), 0);
     const totalRevenue = branchSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
     
     const inventoryByProduct = branchInventory.map(item => {
-      const product = products.find(p => p.id === item.productId);
+      const product = products.find(p => p.id === item.product_id);
       return {
         ...item,
         productName: product?.name || 'Unknown Product',
         unit: product?.unit || 'units'
       };
-    }).filter(i => i.quantity > 0);
+    }).filter(i => i.stock > 0);
 
     return { totalInventoryItems, totalRevenue, inventoryByProduct, salesCount: branchSales.length };
   };
@@ -264,7 +264,7 @@ export default function BranchesView({ branches, products, inventory, sales, add
                             <tr key={idx} className="hover:bg-background transition-all group">
                               <td className="px-10 py-6 font-serif text-lg italic text-ink font-medium">{item.productName}</td>
                               <td className="px-10 py-6 text-right">
-                                <span className="font-mono font-black text-2xl text-ink tracking-tighter">{item.quantity}</span>
+                                <span className="font-mono font-black text-2xl text-ink tracking-tighter">{item.stock}</span>
                                 <span className="text-[9px] font-mono text-primary font-black ml-2 uppercase tracking-widest">{item.unit}</span>
                               </td>
                             </tr>

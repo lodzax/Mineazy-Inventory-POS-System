@@ -26,10 +26,11 @@ interface POSViewProps {
   inventory: any[];
   processSale: (branchId: string, items: any[], total: number, customerName: string, cashierName: string) => Promise<void>;
   user: any;
+  profile: any;
 }
 
-export default function POSView({ products, branches, inventory, processSale, user }: POSViewProps) {
-  const [selectedBranch, setSelectedBranch] = useState(branches[0]?.id || '');
+export default function POSView({ products, branches, inventory, processSale, user, profile }: POSViewProps) {
+  const [selectedBranch, setSelectedBranch] = useState(profile?.branch_id || branches[0]?.id || '');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<{ productId: string, quantity: number, price: number }[]>([]);
   const [customerName, setCustomerName] = useState('');
@@ -42,12 +43,12 @@ export default function POSView({ products, branches, inventory, processSale, us
   }, [products, search]);
 
   const branchInventory = useMemo(() => {
-    return inventory.filter(i => i.branchId === selectedBranch);
+    return inventory.filter(i => i.branch_id === selectedBranch);
   }, [inventory, selectedBranch]);
 
   const addToCart = (product: any) => {
     const existing = cart.find(item => item.productId === product.id);
-    const stock = branchInventory.find(i => i.productId === product.id)?.stock || 0;
+    const stock = branchInventory.find(i => i.product_id === product.id)?.stock || 0;
     
     if (existing) {
       if (existing.quantity >= stock) return; // Cap at stock
@@ -63,7 +64,7 @@ export default function POSView({ products, branches, inventory, processSale, us
   };
 
   const updateQuantity = (productId: string, delta: number) => {
-    const stock = branchInventory.find(i => i.productId === productId)?.stock || 0;
+    const stock = branchInventory.find(i => i.product_id === productId)?.stock || 0;
     setCart(cart.map(item => {
       if (item.productId === productId) {
         const newQty = Math.max(1, Math.min(stock, item.quantity + delta));
@@ -85,7 +86,7 @@ export default function POSView({ products, branches, inventory, processSale, us
     if (!lastSaleReceipt) return;
     const doc = new jsPDF();
 
-    const branch = branches.find(b => b.id === lastSaleReceipt.branchId)?.name || 'Unknown Branch';
+    const branch = branches.find(b => b.id === lastSaleReceipt.branch_id)?.name || 'Unknown Branch';
     const cashier = user?.displayName || user?.email || 'System User';
     const dateStr = lastSaleReceipt.timestamp.toLocaleString();
 
@@ -121,11 +122,11 @@ export default function POSView({ products, branches, inventory, processSale, us
     doc.setFont("helvetica", "bold");
     doc.text(cashier, 165, 45, { align: "right" });
 
-    if (lastSaleReceipt.customerName) {
+    if (lastSaleReceipt.customer_name) {
       doc.setFont("helvetica", "normal");
       doc.text(`CUSTOMER:`, 190, 52, { align: "right" });
       doc.setFont("helvetica", "bold");
-      doc.text(lastSaleReceipt.customerName, 165, 52, { align: "right" });
+      doc.text(lastSaleReceipt.customer_name, 165, 52, { align: "right" });
     }
 
     // Items Table
@@ -174,11 +175,11 @@ export default function POSView({ products, branches, inventory, processSale, us
       await processSale(selectedBranch, cart, total, customerName, cashierName);
       setLastSaleReceipt({
         id: Math.random().toString(36).substr(2, 9).toUpperCase(),
-        branchId: selectedBranch,
-        cashierName, // Added to local state for PDF export consistency
+        branch_id: selectedBranch,
+        cashier_name: cashierName,
         items: [...cart],
         total,
-        customerName,
+        customer_name: customerName,
         timestamp: new Date()
       });
       setCart([]);
@@ -208,11 +209,12 @@ export default function POSView({ products, branches, inventory, processSale, us
             <Store className="w-5 h-5 text-primary" />
             <select 
               value={selectedBranch}
+              disabled={profile?.role === 'Supervisor' || profile?.role === 'Cashier'}
               onChange={(e) => {
                 setSelectedBranch(e.target.value);
                 setCart([]); // Clear cart when branch changes to avoid stock issues
               }}
-              className="bg-transparent focus:outline-none font-bold text-xs uppercase tracking-widest text-ink appearance-none cursor-pointer pr-4"
+              className="bg-transparent focus:outline-none font-bold text-xs uppercase tracking-widest text-ink appearance-none cursor-pointer pr-4 disabled:cursor-not-allowed"
             >
               {branches.map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>
@@ -223,7 +225,7 @@ export default function POSView({ products, branches, inventory, processSale, us
 
         <div className="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
           {filteredProducts.map(product => {
-            const stock = branchInventory.find(i => i.productId === product.id)?.stock || 0;
+            const stock = branchInventory.find(i => i.product_id === product.id)?.stock || 0;
             const inCart = cart.find(item => item.productId === product.id)?.quantity || 0;
             const availableStock = stock - inCart;
             const isLowStock = availableStock <= 5 && availableStock > 0;

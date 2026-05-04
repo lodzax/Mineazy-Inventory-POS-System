@@ -13,14 +13,14 @@ export default function OrdersHistoryTable({ orders, branches, products }: Order
   const [statusFilter, setStatusFilter] = useState('all');
 
   const filteredOrders = orders.filter(order => {
-    const branch = branches.find(b => b.id === order.branchId);
+    const branch = branches.find(b => b.id === order.branch_id);
     const matchesSearch = branch?.name.toLowerCase().includes(search.toLowerCase()) || 
                           order.id.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const sortedOrders = [...filteredOrders].sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+  const sortedOrders = [...filteredOrders].sort((a, b) => (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0));
 
   return (
     <div className="space-y-8 pb-12">
@@ -66,11 +66,11 @@ export default function OrdersHistoryTable({ orders, branches, products }: Order
             </thead>
             <tbody className="divide-y divide-ink/[0.03]">
               {sortedOrders.map((order) => {
-                const branch = branches.find(b => b.id === order.branchId);
+                const branch = branches.find(b => b.id === order.branch_id);
                 return (
                   <tr key={order.id} className="text-xs hover:bg-background transition-all group">
                     <td className="px-10 py-6 font-mono text-[10px] font-bold text-ink/40 group-hover:text-ink">
-                      {order.createdAt ? new Date(order.createdAt.toMillis()).toLocaleString() : 'PENDING'}
+                      {order.created_at ? new Date(order.created_at).toLocaleString() : 'PENDING'}
                     </td>
                     <td className="px-10 py-6 font-mono text-[10px] font-black text-ink uppercase tracking-tight">
                       #{order.id.slice(0, 8)}
@@ -103,11 +103,11 @@ export default function OrdersHistoryTable({ orders, branches, products }: Order
                     <td className="px-10 py-6 text-right font-mono text-[10px] text-ink/40 space-y-1">
                       <div className="flex items-center justify-end gap-2 group-hover:text-ink transition-colors">
                         <span className="text-[8px] font-black uppercase opacity-40">Sent:</span>
-                        <span className="font-bold">{order.dispatchedAt ? new Date(order.dispatchedAt.toMillis()).toLocaleString() : '---'}</span>
+                        <span className="font-bold">{order.dispatched_at ? new Date(order.dispatched_at).toLocaleString() : '---'}</span>
                       </div>
                       <div className="flex items-center justify-end gap-2 text-primary">
                         <span className="text-[8px] font-black uppercase opacity-40">Recv:</span>
-                        <span className="font-bold">{order.receivedAt ? new Date(order.receivedAt.toMillis()).toLocaleString() : '---'}</span>
+                        <span className="font-bold">{order.received_at ? new Date(order.received_at).toLocaleString() : '---'}</span>
                       </div>
                     </td>
                   </tr>

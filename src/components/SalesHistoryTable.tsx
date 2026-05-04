@@ -18,14 +18,14 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
   const [endDate, setEndDate] = useState('');
 
   const filteredSales = sales.filter(sale => {
-    const branch = branches.find(b => b.id === sale.branchId);
-    const saleDate = sale.timestamp ? new Date(sale.timestamp.toMillis()) : null;
+    const branch = branches.find(b => b.id === sale.branch_id);
+    const saleDate = sale.timestamp ? new Date(sale.timestamp) : null;
     
     const matchesSearch = branch?.name.toLowerCase().includes(search.toLowerCase()) || 
-                          sale.customerName?.toLowerCase().includes(search.toLowerCase()) ||
+                          sale.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
                           sale.id.toLowerCase().includes(search.toLowerCase());
     
-    const matchesBranch = branchFilter === 'all' || sale.branchId === branchFilter;
+    const matchesBranch = branchFilter === 'all' || sale.branch_id === branchFilter;
     
     const matchesProduct = productFilter === 'all' || 
                            sale.items?.some((item: any) => item.productId === productFilter);
@@ -36,23 +36,23 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
     return matchesSearch && matchesBranch && matchesProduct && matchesDate;
   });
 
-  const sortedSales = [...filteredSales].sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+  const sortedSales = [...filteredSales].sort((a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0));
 
   const exportCSV = () => {
     const headers = ['Date', 'Sale ID', 'Branch', 'Cashier', 'Customer', 'Items', 'Total'];
     const rows = sortedSales.map(sale => {
-      const branch = branches.find(b => b.id === sale.branchId)?.name || 'Unknown';
+      const branch = branches.find(b => b.id === sale.branch_id)?.name || 'Unknown';
       const itemsStr = sale.items?.map((item: any) => {
         const p = products.find(prod => prod.id === item.productId);
         return `${item.quantity}x ${p?.name || item.productId}`;
       }).join('; ');
       
       return [
-        sale.timestamp ? new Date(sale.timestamp.toMillis()).toLocaleString() : '',
+        sale.timestamp ? new Date(sale.timestamp).toLocaleString() : '',
         sale.id,
         branch,
-        sale.cashierName || '---',
-        sale.customerName || 'Walk-in',
+        sale.cashier_name || '---',
+        sale.customer_name || 'Walk-in',
         itemsStr,
         sale.total.toFixed(2)
       ];
@@ -100,18 +100,18 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
     doc.text(periodText.toUpperCase(), 14, 34);
 
     const tableData = sortedSales.map(sale => {
-      const branch = branches.find(b => b.id === sale.branchId)?.name || 'N/A';
+      const branch = branches.find(b => b.id === sale.branch_id)?.name || 'N/A';
       const itemsStr = sale.items?.map((item: any) => {
         const p = products.find(prod => prod.id === item.productId);
         return `${item.quantity} ${p?.unit || ''} ${p?.name || item.productId}`;
       }).join('; ');
       
       return [
-        sale.timestamp ? new Date(sale.timestamp.toMillis()).toLocaleString() : '',
+        sale.timestamp ? new Date(sale.timestamp).toLocaleString() : '',
         sale.id.slice(0, 8),
         branch.toUpperCase(),
-        (sale.cashierName || 'SYSTEM').toUpperCase(),
-        (sale.customerName || 'GENERAL GUEST').toUpperCase(),
+        (sale.cashier_name || 'SYSTEM').toUpperCase(),
+        (sale.customer_name || 'GENERAL GUEST').toUpperCase(),
         itemsStr,
         `$${sale.total.toFixed(2)}`
       ];
@@ -226,11 +226,11 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
             </thead>
             <tbody className="divide-y divide-ink/[0.03]">
               {sortedSales.map((sale) => {
-                const branch = branches.find(b => b.id === sale.branchId);
+                const branch = branches.find(b => b.id === sale.branch_id);
                 return (
                   <tr key={sale.id} className="text-xs hover:bg-background transition-all group">
                     <td className="px-8 py-6 font-mono text-[10px] text-ink/40 font-bold group-hover:text-ink transition-colors">
-                      {sale.timestamp ? new Date(sale.timestamp.toMillis()).toLocaleString() : 'PENDING'}
+                      {sale.timestamp ? new Date(sale.timestamp).toLocaleString() : 'PENDING'}
                     </td>
                     <td className="px-8 py-6 font-mono text-[10px] font-black text-ink uppercase tracking-tight">
                       #{sale.id.slice(0, 8)}
@@ -238,13 +238,13 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
                     <td className="px-8 py-6">
                        <span className="px-3 py-1 bg-ink/5 rounded-full text-[9px] font-mono font-black uppercase tracking-widest text-ink/60">{branch?.name || '---'}</span>
                     </td>
-                    <td className="px-8 py-6 font-mono text-[10px] font-black text-primary/60 italic">{sale.cashierName || 'SYSTEM'}</td>
+                    <td className="px-8 py-6 font-mono text-[10px] font-black text-primary/60 italic">{sale.cashier_name || 'SYSTEM'}</td>
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-background flex items-center justify-center text-ink/20">
                           <User className="w-4 h-4" />
                         </div>
-                        <span className="text-ink font-bold text-xs">{sale.customerName || 'Walk-in'}</span>
+                        <span className="text-ink font-bold text-xs">{sale.customer_name || 'Walk-in'}</span>
                       </div>
                     </td>
                     <td className="px-8 py-6">

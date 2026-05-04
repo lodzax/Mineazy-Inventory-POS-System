@@ -21,11 +21,13 @@ interface OrdersViewProps {
   dispatchOrder: (orderId: string) => void;
   cancelOrder: (orderId: string) => void;
   acknowledgeOrder: (orderId: string) => void;
+  profile: any;
 }
 
-export default function OrdersView({ orders, branches, products, createOrder, dispatchOrder, cancelOrder, acknowledgeOrder }: OrdersViewProps) {
+export default function OrdersView({ orders, branches, products, createOrder, dispatchOrder, cancelOrder, acknowledgeOrder, profile }: OrdersViewProps) {
+  const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedBranch, setSelectedBranch] = useState('');
+  const [selectedBranch, setSelectedBranch] = useState(profile?.branch_id || '');
   const [orderItems, setOrderItems] = useState<{ productId: string, quantity: number }[]>([]);
   const [notes, setNotes] = useState('');
 
@@ -53,7 +55,7 @@ export default function OrdersView({ orders, branches, products, createOrder, di
     setNotes('');
   };
 
-  const sortedOrders = [...orders].sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+  const sortedOrders = [...orders].sort((a, b) => (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0));
 
   return (
     <div className="space-y-6">
@@ -70,7 +72,7 @@ export default function OrdersView({ orders, branches, products, createOrder, di
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-12">
         {sortedOrders.map((order) => {
-          const branch = branches.find(b => b.id === order.branchId);
+          const branch = branches.find(b => b.id === order.branch_id);
           return (
             <motion.div 
               key={order.id}
@@ -89,7 +91,7 @@ export default function OrdersView({ orders, branches, products, createOrder, di
                     {order.status}
                   </span>
                   <p className="text-[10px] font-mono text-ink/30 mt-3 font-bold uppercase">
-                    {order.createdAt ? new Date(order.createdAt.toMillis()).toLocaleString() : 'PENDING'}
+                    {order.created_at ? new Date(order.created_at).toLocaleString() : 'PENDING'}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-background rounded-2xl flex items-center justify-center text-ink/20 group-hover:text-primary transition-colors">
@@ -157,7 +159,7 @@ export default function OrdersView({ orders, branches, products, createOrder, di
                     Archive Complete
                   </div>
                   <p className="text-[9px] font-mono text-ink/30 uppercase font-bold">
-                    T-PLUS: {order.receivedAt ? new Date(order.receivedAt.toMillis()).toLocaleString() : ''}
+                    T-PLUS: {order.received_at ? new Date(order.received_at).toLocaleString() : ''}
                   </p>
                 </div>
               )}
@@ -205,8 +207,9 @@ export default function OrdersView({ orders, branches, products, createOrder, di
                   <select 
                     required
                     value={selectedBranch}
+                    disabled={isLimited}
                     onChange={(e) => setSelectedBranch(e.target.value)}
-                    className="w-full px-6 py-4 bg-background border border-ink/5 rounded-2xl font-bold text-ink uppercase tracking-widest text-xs focus:ring-4 focus:ring-primary/5 transition-all appearance-none"
+                    className="w-full px-6 py-4 bg-background border border-ink/5 rounded-2xl font-bold text-ink uppercase tracking-widest text-xs focus:ring-4 focus:ring-primary/5 transition-all appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="">Select Endpoint...</option>
                     {branches.map(b => (
