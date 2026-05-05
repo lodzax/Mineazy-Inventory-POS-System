@@ -512,11 +512,14 @@ export default function POSView({ products, branches, inventory, processSale, us
 
               <div className="flex flex-col gap-4">
                 <button 
-                  onClick={generatePDF}
+                  onClick={() => {
+                    generatePDF();
+                    window.print();
+                  }}
                   className="w-full py-5 bg-background border-2 border-ink/5 text-ink rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-ink hover:text-white transition-all active:scale-95 shadow-sm"
                 >
                   <Printer className="w-5 h-5 opacity-40" />
-                  Generate Archive PDF
+                  Print Receipt
                 </button>
                 <button 
                   onClick={() => setLastSaleReceipt(null)}

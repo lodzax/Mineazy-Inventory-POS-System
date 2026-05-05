@@ -52,11 +52,11 @@ const branches = [
 ];
 
 const products = [
-  { id: '30g-mercury', name: '30g Mercury', unit: 'pcs', price: 23, cost_price: 15.15 },
-  { id: '500g-mercury', name: '500g Mercury', unit: 'pcs', price: 325, cost_price: 250 },
-  { id: '1kg-mercury', name: '1kg Mercury', unit: 'pcs', price: 650, cost_price: 500 },
-  { id: 'batteries', name: 'Batteries', unit: 'pcs', price: 2, cost_price: 1.7 },
-  { id: 'beaters', name: 'Beaters', unit: 'pcs', price: 2.5, cost_price: 2.21 }
+  { id: '30g-mercury', name: '30g Mercury', unit: 'pcs', category: 'Chemicals', price: 23, cost_price: 15.15 },
+  { id: '500g-mercury', name: '500g Mercury', unit: 'pcs', category: 'Chemicals', price: 325, cost_price: 250 },
+  { id: '1kg-mercury', name: '1kg Mercury', unit: 'pcs', category: 'Chemicals', price: 650, cost_price: 500 },
+  { id: 'batteries', name: 'Batteries', unit: 'pcs', category: 'Energy', price: 2, cost_price: 1.7 },
+  { id: 'beaters', name: 'MID Beaters', unit: 'pcs', category: 'Machinery', price: 2.5, cost_price: 2.21 }
 ];
 
 export default function App() {
@@ -100,6 +100,7 @@ export default function App() {
 
   const [newProductName, setNewProductName] = useState('');
   const [newProductUnit, setNewProductUnit] = useState('');
+  const [newProductCategory, setNewProductCategory] = useState('General');
   const [newProductPrice, setNewProductPrice] = useState('');
   const [newProductCost, setNewProductCost] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
@@ -118,9 +119,10 @@ export default function App() {
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newProductName && newProductUnit && newProductPrice) {
-      await addProduct(newProductName, newProductUnit, parseFloat(newProductPrice), parseFloat(newProductCost || '0'));
+      await addProduct(newProductName, newProductUnit, parseFloat(newProductPrice), parseFloat(newProductCost || '0'), newProductCategory);
       setNewProductName('');
       setNewProductUnit('');
+      setNewProductCategory('General');
       setNewProductPrice('');
       setNewProductCost('');
       setShowProductModal(false);
@@ -735,6 +737,21 @@ export default function App() {
                       className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                       placeholder="e.g. kg, pcs, boxes"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Category</label>
+                    <select 
+                      value={newProductCategory}
+                      onChange={(e) => setNewProductCategory(e.target.value)}
+                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                    >
+                      <option value="General">General</option>
+                      <option value="Chemicals">Chemicals</option>
+                      <option value="Energy">Energy</option>
+                      <option value="Machinery">Machinery</option>
+                      <option value="Tools">Tools</option>
+                      <option value="Safety">Safety</option>
+                    </select>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">

@@ -150,7 +150,7 @@ export function useInventory() {
       let tQuery = supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(100);
       let oQuery = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
       let sQuery = supabase.from('sales').select('*').order('timestamp', { ascending: false }).limit(100);
-      let trQuery = supabase.from('transfers').select('*').order('timestamp', { ascending: false }).limit(100);
+      let trQuery = supabase.from('transfers').select('*').order('created_at', { ascending: false }).limit(100);
 
       if (isLimited && userBranch) {
         bQuery = bQuery.eq('id', userBranch);
@@ -294,13 +294,13 @@ export function useInventory() {
     }
   };
 
-  const addProduct = async (name: string, unit: string, price: number, costPrice: number = 0) => {
+  const addProduct = async (name: string, unit: string, price: number, costPrice: number = 0, category: string = 'General') => {
     if (!user) return;
     const id = name.toLowerCase().replace(/\s+/g, '-');
     try {
       const { error } = await supabase
         .from('products')
-        .insert({ id, name, unit, price, cost_price: costPrice });
+        .insert({ id, name, unit, price, cost_price: costPrice, category });
       if (error) throw error;
       await fetchData();
     } catch (err) {
@@ -320,8 +320,8 @@ export function useInventory() {
           total,
           customer_name: customerName,
           cashier_name: cashierName,
-          timestamp: new Date().toISOString(),
-          user_id: user.id
+          user_id: user.id,
+          timestamp: new Date().toISOString()
         })
         .select()
         .single();
@@ -354,8 +354,8 @@ export function useInventory() {
           items,
           status: 'pending',
           created_at: new Date().toISOString(),
-          notes,
-          user_id: user.id
+          user_id: user.id,
+          notes
         });
       if (error) throw error;
       await fetchData();
@@ -480,8 +480,8 @@ export function useInventory() {
           to_branch_id: toBranchId,
           items,
           notes,
-          timestamp: new Date().toISOString(),
-          user_id: user.id
+          user_id: user.id,
+          created_at: new Date().toISOString()
         })
         .select()
         .single();

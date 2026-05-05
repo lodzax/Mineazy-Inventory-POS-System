@@ -16,6 +16,8 @@ interface InventoryTableProps {
 export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, profile }: InventoryTableProps) {
   const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
   const [selectedBranch, setSelectedBranch] = useState<string>(isLimited ? (profile?.branch_id || branches[0]?.id) : 'all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [stockLevelFilter, setStockLevelFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [manualUpdate, setManualUpdate] = useState<{ branchId: string, productId: string, type: 'add' | 'remove' } | null>(null);
   const [manualAmount, setManualAmount] = useState<string>('');
@@ -24,10 +26,49 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ name: '', unit: '', price: '', cost_price: '' });
 
-  const filteredBranches = branches.filter(b => 
-    (selectedBranch === 'all' || b.id === selectedBranch) &&
-    b.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter;
+    
+    // Improved search: split into terms and match all terms
+    const searchTerms = search.toLowerCase().trim().split(/\s+/);
+    const matchesSearch = searchTerms.every(term => 
+      p.name.toLowerCase().includes(term) || 
+      p.category?.toLowerCase().includes(term)
+    );
+    
+    return matchesCategory && (search === '' || matchesSearch);
+  });
+
+  const filteredBranches = branches.filter(b => {
+    const matchesBranchSelection = selectedBranch === 'all' || b.id === selectedBranch;
+    
+    const searchTerms = search.toLowerCase().trim().split(/\s+/);
+    const branchNameMatches = searchTerms.every(term => 
+      b.name.toLowerCase().includes(term) ||
+      b.id.toLowerCase().includes(term)
+    );
+    
+    // If the search matches any product, and we aren't filtering purely by branch name, 
+    // we show the branches (the matrix will show the matching columns)
+    const productMatchesSearch = products.some(p => {
+      const pName = p.name.toLowerCase();
+      const pCat = p.category?.toLowerCase() || '';
+      return searchTerms.every(term => pName.includes(term) || pCat.includes(term));
+    });
+
+    const matchesStock = stockLevelFilter === 'all' || filteredProducts.some(p => {
+      const inv = inventory.find(i => i.branch_id === b.id && i.product_id === p.id);
+      const stock = inv ? inv.stock : 0;
+      if (stockLevelFilter === 'critical') return stock <= 5;
+      if (stockLevelFilter === 'low') return stock > 5 && stock <= 15;
+      if (stockLevelFilter === 'in-stock') return stock > 15;
+      return true;
+    });
+
+    return matchesBranchSelection && matchesStock && (search === '' || branchNameMatches || productMatchesSearch);
+  });
+
+  const categories = Array.from(new Set(products.map(p => p.category))).filter(Boolean);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,29 +263,62 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
         )}
       </AnimatePresence>
 
-      <div className="flex flex-col md:flex-row gap-5 items-center justify-between">
-        <div className="relative w-full md:w-96">
+      <div className="flex flex-col lg:flex-row gap-5 items-center justify-between">
+        <div className="relative w-full lg:w-96">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
           <input 
             type="text"
-            placeholder="System node search..."
+            placeholder="Search products or branches..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-12 pr-6 py-4 bg-white border border-ink/5 rounded-2xl font-sans text-sm focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01]"
           />
         </div>
 
-        <select 
-          value={selectedBranch}
-          disabled={isLimited}
-          onChange={(e) => setSelectedBranch(e.target.value)}
-          className="w-full md:w-56 px-6 py-4 bg-white border border-ink/5 rounded-2xl font-sans text-sm font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {!isLimited && <option value="all">Global Matrix</option>}
-          {branches.map(b => (
-            <option key={b.id} value={b.id}>{b.name}</option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+          <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+            <span className="text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Branch Selection</span>
+            <select 
+              value={selectedBranch}
+              disabled={isLimited}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              className="w-full px-6 py-3.5 bg-white border border-ink/5 rounded-2xl font-sans text-xs font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01] disabled:opacity-50"
+            >
+              {!isLimited && <option value="all">Global Matrix</option>}
+              {branches.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+            <span className="text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Stock Level</span>
+            <select 
+              value={stockLevelFilter}
+              onChange={(e) => setStockLevelFilter(e.target.value)}
+              className="w-full px-6 py-3.5 bg-white border border-ink/5 rounded-2xl font-sans text-xs font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01]"
+            >
+              <option value="all">All Levels</option>
+              <option value="critical">Critical (≤5)</option>
+              <option value="low">Low (6-15)</option>
+              <option value="in-stock">In-Stock (&gt;15)</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+            <span className="text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Category</span>
+            <select 
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full px-6 py-3.5 bg-white border border-ink/5 rounded-2xl font-sans text-xs font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01]"
+            >
+              <option value="all">All Categories</option>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-2xl shadow-ink/[0.02]">
@@ -253,11 +327,14 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
             <thead>
               <tr className="border-b border-ink/5 bg-background font-mono text-[9px] uppercase text-ink/40 font-bold tracking-[0.2em]">
                 <th className="px-8 py-6">Branch Endpoint</th>
-                {products.map(p => (
+                {filteredProducts.map(p => (
                   <th key={p.id} className="px-8 py-6 min-w-[300px]">
                     <div className="flex items-center justify-between gap-4 mb-2">
                        <div className="flex flex-col">
-                        <span className="text-ink text-xs">{p.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-ink text-xs">{p.name}</span>
+                          <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-[8px] rounded-md normal-case font-mono">{p.category}</span>
+                        </div>
                         <span className="text-primary tracking-tighter normal-case font-serif text-[11px] italic font-medium">{p.unit} unit</span>
                       </div>
                       {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
@@ -302,17 +379,20 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                       <span className="text-[10px] font-mono text-ink/30 font-bold uppercase tracking-widest">{branch.id}</span>
                     </div>
                   </td>
-                  {products.map(product => {
+                  {filteredProducts.map(product => {
                     const item = inventory.find(i => i.branch_id === branch.id && i.product_id === product.id);
                     const stock = item ? item.stock : 0;
                     const isCritical = stock <= 5;
+                    const isLow = stock > 5 && stock <= 15;
                     return (
                       <td key={product.id} className="px-8 py-8">
                         <div className="flex items-center gap-8">
                           <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-[2rem] border-2 transition-all ${
                             isCritical 
                               ? 'bg-danger/5 border-danger text-danger shadow-lg shadow-danger/10 scale-110' 
-                              : 'bg-background border-ink/5 text-ink'
+                              : isLow
+                                ? 'bg-amber-500/5 border-amber-500 text-amber-600 shadow-lg shadow-amber-500/10'
+                                : 'bg-background border-ink/5 text-ink'
                           }`}>
                             <span className="font-mono text-2xl font-black tracking-tighter">{stock}</span>
                             <span className="text-[9px] font-mono opacity-40 uppercase font-black">Level</span>
