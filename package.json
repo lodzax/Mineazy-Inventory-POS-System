@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "start": "node index.js"
+    "start": "index.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
