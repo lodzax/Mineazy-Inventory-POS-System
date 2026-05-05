@@ -17,7 +17,7 @@ export default function TransferHistoryTable({ transfers, branches, products }: 
     const toBranch = branches.find(b => b.id === transfer.to_branch_id);
     const matchesSearch = fromBranch?.name.toLowerCase().includes(search.toLowerCase()) || 
                           toBranch?.name.toLowerCase().includes(search.toLowerCase()) ||
-                          transfer.id.toLowerCase().includes(search.toLowerCase());
+                          transfer.id.toString().toLowerCase().includes(search.toLowerCase());
     const matchesBranch = branchFilter === 'all' || 
                           transfer.from_branch_id === branchFilter || 
                           transfer.to_branch_id === branchFilter;

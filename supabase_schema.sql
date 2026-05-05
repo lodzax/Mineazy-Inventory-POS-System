@@ -80,17 +80,31 @@ CREATE TABLE IF NOT EXISTS sales (
 -- 6. Orders Table
 CREATE TABLE IF NOT EXISTS orders (
   id BIGSERIAL PRIMARY KEY,
-  branch_id TEXT REFERENCES branches(id),
-  items JSONB NOT NULL, -- Array of { productId, quantity }
-  status TEXT DEFAULT 'pending', -- pending, dispatched, completed, cancelled
+  branch_id TEXT REFERENCES branches(id) NOT NULL,
+  items JSONB NOT NULL, -- Array of { productId, quantity, suppliedQuantity }
+  status TEXT CHECK (status IN ('Pending', 'Processed', 'Dispatched', 'Received', 'Cancelled')) DEFAULT 'Pending',
   notes TEXT,
-  user_id UUID REFERENCES profiles(id),
+  user_id UUID REFERENCES profiles(id) NOT NULL, -- The person who initiated the request
+  processed_at TIMESTAMPTZ,
+  processed_by UUID REFERENCES profiles(id),
   dispatched_at TIMESTAMPTZ,
+  dispatched_by UUID REFERENCES profiles(id),
   received_at TIMESTAMPTZ,
+  received_by UUID REFERENCES profiles(id),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. Transfers Table
+-- 7. Notifications Table
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  read BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. Transfers Table
 CREATE TABLE IF NOT EXISTS transfers (
   id BIGSERIAL PRIMARY KEY,
   from_branch_id TEXT REFERENCES branches(id),
@@ -125,6 +139,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'transfers') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE transfers;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notifications') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+  END IF;
 END $$;
 
 -- RLS for tables (ALTER TABLE ... ENABLE RLS is idempotent)
@@ -136,6 +153,7 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transfers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to fix recursion in RLS
 CREATE OR REPLACE FUNCTION get_my_role()
@@ -157,6 +175,12 @@ CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE USING 
 
 DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
 CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- Notifications Policies
+DROP POLICY IF EXISTS "Users can view their own notifications" ON notifications;
+CREATE POLICY "Users can view their own notifications" ON notifications FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "System can insert notifications" ON notifications;
+CREATE POLICY "System can insert notifications" ON notifications FOR INSERT WITH CHECK (true);
 
 -- Other Policies
 DROP POLICY IF EXISTS "Allow public read for branches" ON branches;

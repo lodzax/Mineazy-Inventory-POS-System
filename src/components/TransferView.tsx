@@ -38,6 +38,12 @@ export default function TransferView({ branches, products, inventory, transferSt
     e.preventDefault();
     if (!fromBranch || !toBranch || fromBranch === toBranch || items.length === 0) return;
     
+    // Validate quantities
+    if (items.some(item => isNaN(item.quantity) || item.quantity <= 0)) {
+      alert("Please enter valid quantities for all items.");
+      return;
+    }
+    
     // Validate stock
     for (const item of items) {
       const stock = fromBranchInventory.find(i => i.product_id === item.productId)?.stock || 0;
@@ -165,8 +171,8 @@ export default function TransferView({ branches, products, inventory, transferSt
                           <input 
                             type="number"
                             min="1"
-                            value={item.quantity}
-                            onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value))}
+                            value={isNaN(item.quantity) ? '' : item.quantity}
+                            onChange={(e) => updateItem(index, 'quantity', e.target.value === '' ? NaN : parseInt(e.target.value))}
                             className="w-24 bg-white border border-ink/5 rounded-xl px-4 py-2 font-mono font-black text-sm text-ink focus:ring-4 focus:ring-primary/5 outline-none text-center"
                           />
                         </td>

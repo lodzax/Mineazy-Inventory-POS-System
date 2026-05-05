@@ -45,7 +45,7 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
     const searchTerms = search.toLowerCase().trim().split(/\s+/);
     const branchNameMatches = searchTerms.every(term => 
       b.name.toLowerCase().includes(term) ||
-      b.id.toLowerCase().includes(term)
+      b.id.toString().toLowerCase().includes(term)
     );
     
     // If the search matches any product, and we aren't filtering purely by branch name, 

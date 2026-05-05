@@ -171,7 +171,7 @@ export default function BranchesView({ branches, products, inventory, sales, add
 
               <div className="mt-8 flex items-center justify-between relative z-10">
                 <span className="text-[9px] font-mono font-black text-ink/10 uppercase tracking-[0.3em]">Node Endpoint</span>
-                <span className="text-[9px] font-mono text-ink/30 font-bold uppercase tracking-tighter">#{branch.id.slice(0, 12)}</span>
+                <span className="text-[9px] font-mono text-ink/30 font-bold uppercase tracking-tighter">#{branch.id.toString().slice(0, 12)}</span>
               </div>
             </motion.div>
           );

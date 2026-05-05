@@ -192,7 +192,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
             <div>
               <p className="text-[10px] font-mono uppercase text-ink/40 font-bold tracking-widest">Pending</p>
               <h3 className="text-3xl font-mono font-bold text-ink tracking-tighter">
-                {orders?.filter(o => o.status === 'pending').length || 0}
+                {orders?.filter(o => o.status?.toLowerCase() === 'pending').length || 0}
               </h3>
             </div>
           </div>
@@ -278,9 +278,9 @@ export default function Dashboard({ inventory, branches, products, orders, trans
             <h3 className="font-serif font-medium text-2xl text-ink italic">Node Distribution</h3>
             <span className="text-[10px] font-mono uppercase text-ink/40 font-bold tracking-widest">Global Mesh</span>
           </div>
-          <div className="min-h-[400px] h-[400px] w-full relative">
+          <div className="min-h-[400px] h-[400px] w-full relative min-w-0">
             {isMounted && (
-              <ResponsiveContainer width="99.9%" height="99.9%" debounce={50}>
+              <ResponsiveContainer width="100%" height="100%" debounce={1}>
                 <BarChart data={branchStock} layout="vertical" margin={{ left: 20, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} opacity={0.5} />
                   <XAxis type="number" hide />
@@ -328,9 +328,9 @@ export default function Dashboard({ inventory, branches, products, orders, trans
             <h3 className="font-serif font-medium text-2xl text-ink italic">Concentration Hub</h3>
             <span className="text-[10px] font-mono uppercase text-ink/40 font-bold tracking-widest">Density Map</span>
           </div>
-          <div className="min-h-[400px] h-[400px] w-full relative">
+          <div className="min-h-[400px] h-[400px] w-full relative min-w-0">
             {isMounted && (
-              <ResponsiveContainer width="99.9%" height="99.9%" debounce={50}>
+              <ResponsiveContainer width="100%" height="100%" debounce={1}>
                 <PieChart>
                   <Pie
                     data={productStock}
@@ -441,9 +441,9 @@ export default function Dashboard({ inventory, branches, products, orders, trans
               </div>
             </div>
 
-            <div className="min-h-[200px] h-[200px] w-full bg-white/[0.03] rounded-[2rem] p-4 border border-white/[0.05] relative">
+            <div className="min-h-[200px] h-[200px] w-full bg-white/[0.03] rounded-[2rem] p-4 border border-white/[0.05] relative min-w-0">
               {isMounted && (
-                <ResponsiveContainer width="99.9%" height="99.9%" debounce={50}>
+                <ResponsiveContainer width="100%" height="100%" debounce={1}>
                   <AreaChart data={movementTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">

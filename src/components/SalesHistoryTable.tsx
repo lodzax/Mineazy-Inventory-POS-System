@@ -23,7 +23,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
     
     const matchesSearch = branch?.name.toLowerCase().includes(search.toLowerCase()) || 
                           sale.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-                          sale.id.toLowerCase().includes(search.toLowerCase());
+                          sale.id.toString().toLowerCase().includes(search.toLowerCase());
     
     const matchesBranch = branchFilter === 'all' || sale.branch_id === branchFilter;
     
@@ -108,7 +108,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
       
       return [
         sale.timestamp ? new Date(sale.timestamp).toLocaleString() : '',
-        sale.id.slice(0, 8),
+        sale.id.toString().slice(0, 8),
         branch.toUpperCase(),
         (sale.cashier_name || 'SYSTEM').toUpperCase(),
         (sale.customer_name || 'GENERAL GUEST').toUpperCase(),
@@ -233,7 +233,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
                       {sale.timestamp ? new Date(sale.timestamp).toLocaleString() : 'PENDING'}
                     </td>
                     <td className="px-8 py-6 font-mono text-[10px] font-black text-ink uppercase tracking-tight">
-                      #{sale.id.slice(0, 8)}
+                      #{sale.id.toString().slice(0, 8)}
                     </td>
                     <td className="px-8 py-6">
                        <span className="px-3 py-1 bg-ink/5 rounded-full text-[9px] font-mono font-black uppercase tracking-widest text-ink/60">{branch?.name || '---'}</span>

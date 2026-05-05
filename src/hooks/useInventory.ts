@@ -309,7 +309,7 @@ export function useInventory() {
   };
 
   const processSale = async (branchId: string, items: { productId: string, quantity: number, price: number }[], total: number, customerName: string = '', cashierName: string = '') => {
-    if (!user) return;
+    if (!user) return null;
     try {
       // 1. Create Sale Record
       const { data: sale, error: saleError } = await supabase
@@ -339,75 +339,140 @@ export function useInventory() {
 
       await batchUpdateStocks(updates);
       await fetchData();
+      return sale;
     } catch (err) {
       handleSupabaseError(err, OperationType.WRITE, 'sales');
+      return null;
     }
   };
 
-  const createOrder = async (branchId: string, items: { productId: string, quantity: number }[], notes: string = '') => {
+  const initiateOrder = async (branchId: string, items: { productId: string, quantity: number }[], notes: string = '') => {
+    if (!user) {
+      console.error("Order initiation failed: No authenticated user.");
+      return;
+    }
+    
+    try {
+      console.log("Initiating order insert...");
+      const { data: order, error } = await supabase
+        .from('orders')
+        .insert({
+          branch_id: branchId,
+          items: items.map(item => ({ ...item, suppliedQuantity: item.quantity })),
+          status: 'Pending',
+          created_at: new Date().toISOString(),
+          user_id: user.id,
+          notes: notes || ''
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Supabase Order Insert Error:", error);
+        throw error;
+      }
+
+      console.log("Order initiated successfully, ID:", order.id);
+
+      // Notify Warehouse (Non-blocking)
+      try {
+        const { data: warehouseStaff, error: staffError } = await supabase
+          .from('profiles')
+          .select('id')
+          .in('role', ['Warehouse', 'Administrator', 'Manager']);
+
+        if (!staffError && warehouseStaff && warehouseStaff.length > 0) {
+          const bName = branches.find(b => b.id === branchId)?.name || 'Branch';
+          const notificationPayloads = warehouseStaff.map(s => ({
+            user_id: s.id,
+            title: 'Order Initiated',
+            message: `New pending order for ${bName}. ID: ${String(order.id).slice(0, 8)}`,
+            created_at: new Date().toISOString()
+          }));
+          
+          await supabase.from('notifications').insert(notificationPayloads);
+        }
+      } catch (notifyErr) {
+        console.warn("Notification delivery failed (non-critical):", notifyErr);
+      }
+
+      await fetchData();
+    } catch (err) {
+      console.error("initiateOrder total failure:", err);
+      handleSupabaseError(err, OperationType.WRITE, 'orders/initiate');
+    }
+  };
+
+  const fulfillOrder = async (orderId: string | number, items: any[], notes: string = '') => {
     if (!user) return;
     try {
       const { error } = await supabase
         .from('orders')
-        .insert({
-          branch_id: branchId,
-          items,
-          status: 'pending',
-          created_at: new Date().toISOString(),
-          user_id: user.id,
-          notes
-        });
-      if (error) throw error;
-      await fetchData();
-    } catch (err) {
-      handleSupabaseError(err, OperationType.WRITE, 'orders');
-    }
-  };
-
-  const dispatchOrder = async (orderId: string) => {
-    if (!user) return;
-    const { data: order, error: fetchError } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('id', orderId)
-      .single();
-
-    if (fetchError || !order) return;
-    if (order.status !== 'pending') return;
-
-    try {
-      // 1. Batch Process items in the order
-      const updates = order.items.map((item: any) => ({
-        branchId: order.branch_id,
-        productId: item.productId,
-        amount: item.quantity,
-        type: 'remove' as const,
-        notes: `Dispatched via Order #${orderId.toString().slice(0, 5)}`
-      }));
-
-      await batchUpdateStocks(updates);
-
-      // 2. Update Order Status
-      const { error: updateError } = await supabase
-        .from('orders')
-        .update({
-          status: 'dispatched',
-          dispatched_at: new Date().toISOString()
+        .update({ 
+          items, 
+          notes,
+          status: 'Processed',
+          processed_at: new Date().toISOString(),
+          processed_by: user.id
         })
         .eq('id', orderId);
 
-      if (updateError) throw updateError;
+      if (error) throw error;
+
+      // Notify Initiator
+      const { data: order } = await supabase.from('orders').select('user_id').eq('id', orderId).single();
+      if (order?.user_id) {
+        await supabase.from('notifications').insert({
+          user_id: order.user_id,
+          title: 'Order Processed',
+          message: `Warehouse has fulfilled quantities for order #${String(orderId).slice(0, 8)}. Ready for dispatch.`,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      await fetchData();
+    } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'orders/fulfill');
+    }
+  };
+
+  const dispatchOrder = async (orderId: string | number) => {
+    if (!user) return;
+    try {
+      const { data: order, error: fetchError } = await supabase.from('orders').select('user_id').eq('id', orderId).single();
+      if (fetchError) throw fetchError;
+
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          status: 'Dispatched',
+          dispatched_at: new Date().toISOString(),
+          dispatched_by: user.id
+        })
+        .eq('id', orderId);
+
+      if (error) throw error;
+
+      if (order?.user_id) {
+        await supabase.from('notifications').insert({
+          user_id: order.user_id,
+          title: 'Order Dispatched',
+          message: `Order #${String(orderId).slice(0, 8)} is now in transit.`,
+          created_at: new Date().toISOString()
+        });
+      }
+
       await fetchData();
     } catch (err) {
       handleSupabaseError(err, OperationType.WRITE, 'orders/dispatch');
     }
   };
 
-  const cancelOrder = async (orderId: string) => {
+  const cancelOrder = async (orderId: string | number) => {
     try {
       const { error } = await supabase
         .from('orders')
-        .update({ status: 'cancelled' })
+        .update({ status: 'Cancelled' })
         .eq('id', orderId);
       if (error) throw error;
       await fetchData();
@@ -416,42 +481,49 @@ export function useInventory() {
     }
   };
 
-  const acknowledgeOrder = async (orderId: string) => {
+  const confirmReceipt = async (orderId: string | number) => {
     if (!user) return;
-    const { data: order, error: fetchError } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('id', orderId)
-      .single();
-
-    if (fetchError || !order) return;
-    if (order.status !== 'dispatched') return;
-
     try {
-      // 1. Batch Add items TO the branch inventory
+      const { data: order, error: fetchError } = await supabase.from('orders').select('*').eq('id', orderId).single();
+      if (fetchError || !order) throw fetchError || new Error('Order not found');
+      if (order.status !== 'Dispatched') throw new Error('Invalid order status for confirmation');
+
+      // Update Inventory based on SUPPLIED quantity
       const updates = order.items.map((item: any) => ({
         branchId: order.branch_id,
         productId: item.productId,
-        amount: item.quantity,
+        amount: item.suppliedQuantity ?? 0,
         type: 'add' as const,
-        notes: `Received via Order #${orderId.toString().slice(0, 5)}`
+        notes: `Received via Order #${String(orderId).slice(0, 5)}`
       }));
 
       await batchUpdateStocks(updates);
 
-      // 2. Update Order Status
+      // Final Status Update
       const { error: updateError } = await supabase
         .from('orders')
         .update({
-          status: 'received',
-          received_at: new Date().toISOString()
+          status: 'Received',
+          received_at: new Date().toISOString(),
+          received_by: user.id
         })
         .eq('id', orderId);
 
       if (updateError) throw updateError;
+
+      // Notify Initiator about receipt confirmation
+      if (order?.user_id) {
+        await supabase.from('notifications').insert({
+          user_id: order.user_id,
+          title: 'Order Finalized',
+          message: `Receipt confirmed for order #${String(orderId).slice(0, 8)}. Inventory has been updated automatically.`,
+          created_at: new Date().toISOString()
+        });
+      }
+
       await fetchData();
     } catch (err) {
-      handleSupabaseError(err, OperationType.WRITE, 'orders/acknowledge');
+      handleSupabaseError(err, OperationType.WRITE, 'orders/confirm');
     }
   };
 
@@ -572,10 +644,11 @@ export function useInventory() {
     addBranch,
     updateBranch,
     deleteBranch,
-    createOrder, 
-    dispatchOrder, 
-    cancelOrder, 
-    acknowledgeOrder, 
+    initiateOrder,
+    fulfillOrder,
+    dispatchOrder,
+    cancelOrder,
+    confirmReceipt,
     processSale,
     transferStock,
     updateProduct,

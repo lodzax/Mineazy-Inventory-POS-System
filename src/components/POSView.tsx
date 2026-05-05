@@ -24,7 +24,7 @@ interface POSViewProps {
   products: any[];
   branches: any[];
   inventory: any[];
-  processSale: (branchId: string, items: any[], total: number, customerName: string, cashierName: string) => Promise<void>;
+  processSale: (branchId: string, items: any[], total: number, customerName: string, cashierName: string) => Promise<any>;
   user: any;
   profile: any;
 }
@@ -99,7 +99,7 @@ export default function POSView({ products, branches, inventory, processSale, us
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
     doc.setFont("helvetica", "bold");
-    doc.text(`TRANSACTION ID: #${lastSaleReceipt.id}`, 105, 28, { align: "center" });
+    doc.text(`TRANSACTION ID: #${lastSaleReceipt.id.toString()}`, 105, 28, { align: "center" });
 
     // Transaction Details
     doc.setDrawColor(241, 245, 249);
@@ -164,7 +164,7 @@ export default function POSView({ products, branches, inventory, processSale, us
     doc.setTextColor(148, 163, 184);
     doc.text("END OF STREAM. ALL TRANSACTIONS AUDITED AND LOGGED.", 105, finalY + 25, { align: "center" });
 
-    doc.save(`Receipt_${lastSaleReceipt.id}.pdf`);
+    doc.save(`Receipt_${lastSaleReceipt.id.toString()}.pdf`);
   };
 
   const handleCheckout = async () => {
@@ -172,16 +172,13 @@ export default function POSView({ products, branches, inventory, processSale, us
     setIsProcessing(true);
     const cashierName = user?.displayName || user?.email || 'System User';
     try {
-      await processSale(selectedBranch, cart, total, customerName, cashierName);
-      setLastSaleReceipt({
-        id: Math.random().toString(36).substr(2, 9).toUpperCase(),
-        branch_id: selectedBranch,
-        cashier_name: cashierName,
-        items: [...cart],
-        total,
-        customer_name: customerName,
-        timestamp: new Date()
-      });
+      const sale = await processSale(selectedBranch, cart, total, customerName, cashierName);
+      if (sale) {
+        setLastSaleReceipt({
+          ...sale,
+          timestamp: new Date(sale.timestamp)
+        });
+      }
       setCart([]);
       setCustomerName('');
       setIsCartOpen(false);
@@ -478,7 +475,7 @@ export default function POSView({ products, branches, inventory, processSale, us
                   <CheckCircle2 className="w-12 h-12" />
                 </div>
                 <h2 className="text-4xl font-serif italic text-ink mb-1">State Synchronized</h2>
-                <p className="text-[10px] font-mono text-ink/30 uppercase tracking-[0.2em] font-black">STREAM ID: #{lastSaleReceipt.id}</p>
+                <p className="text-[10px] font-mono text-ink/30 uppercase tracking-[0.2em] font-black">STREAM ID: #{lastSaleReceipt.id.toString()}</p>
               </div>
 
               <div className="space-y-6 mb-10">

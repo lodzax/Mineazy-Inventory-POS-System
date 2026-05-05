@@ -37,7 +37,6 @@ import { useInventory } from './hooks/useInventory';
 import Dashboard from './components/Dashboard';
 import InventoryTable from './components/InventoryTable';
 import Scanner from './components/Scanner';
-import OrdersView from './components/OrdersView';
 import OrdersHistoryTable from './components/OrdersHistoryTable';
 import POSView from './components/POSView';
 import SalesHistoryTable from './components/SalesHistoryTable';
@@ -60,7 +59,7 @@ const products = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders' | 'orders_history' | 'pos' | 'sales_history' | 'transfers' | 'transfers_history' | 'branches'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders_history' | 'pos' | 'sales_history' | 'transfers' | 'transfers_history' | 'branches'>('dashboard');
   const [showScanner, setShowScanner] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -82,10 +81,11 @@ export default function App() {
     transfers,
     updateStocks, 
     addProduct, 
-    createOrder, 
-    dispatchOrder, 
-    cancelOrder, 
-    acknowledgeOrder,
+    initiateOrder,
+    fulfillOrder,
+    dispatchOrder,
+    cancelOrder,
+    confirmReceipt,
     processSale,
     transferStock,
     updateProduct,
@@ -112,7 +112,7 @@ export default function App() {
     } else if (profile?.role === 'Supervisor' && activeTab === 'dashboard') {
       setActiveTab('inventory');
     } else if (profile?.role === 'Warehouse' && (activeTab === 'dashboard' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
-      setActiveTab('orders');
+      setActiveTab('orders_history');
     }
   }, [profile, activeTab]);
 
@@ -401,7 +401,7 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
-          {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+          {(profile?.role === 'Cashier' || profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
             <NavItem 
               active={activeTab === 'pos'} 
               onClick={() => setActiveTab('pos')} 
@@ -410,7 +410,7 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
-          {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+          {(profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
             <NavItem 
               active={activeTab === 'sales_history'} 
               onClick={() => setActiveTab('sales_history')} 
@@ -434,15 +434,6 @@ export default function App() {
               onClick={() => setActiveTab('transfers_history')} 
               icon={<PackageCheck className="w-5 h-5" />} 
               label="Transfer History" 
-              collapsed={isSidebarCollapsed}
-            />
-          )}
-          {(profile?.role !== 'Cashier') && (
-            <NavItem 
-              active={activeTab === 'orders'} 
-              onClick={() => setActiveTab('orders')} 
-              icon={<ClipboardList className="w-5 h-5" />} 
-              label="Manage Orders" 
               collapsed={isSidebarCollapsed}
             />
           )}
@@ -554,7 +545,7 @@ export default function App() {
                     label="Transactions" 
                   />
                 )}
-                {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+                {(profile?.role === 'Cashier' || profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
                   <NavItem 
                     active={activeTab === 'pos'} 
                     onClick={() => { setActiveTab('pos'); setIsSidebarOpen(false); }} 
@@ -562,7 +553,7 @@ export default function App() {
                     label="POS System" 
                   />
                 )}
-                {(profile?.role !== 'Cashier' && profile?.role !== 'Warehouse') && (
+                {(profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
                   <NavItem 
                     active={activeTab === 'sales_history'} 
                     onClick={() => { setActiveTab('sales_history'); setIsSidebarOpen(false); }} 
@@ -584,14 +575,6 @@ export default function App() {
                     onClick={() => { setActiveTab('transfers_history'); setIsSidebarOpen(false); }} 
                     icon={<PackageCheck className="w-5 h-5" />} 
                     label="Transfer Logs" 
-                  />
-                )}
-                {(profile?.role !== 'Cashier') && (
-                  <NavItem 
-                    active={activeTab === 'orders'} 
-                    onClick={() => { setActiveTab('orders'); setIsSidebarOpen(false); }} 
-                    icon={<ClipboardList className="w-5 h-5" />} 
-                    label="Orders" 
                   />
                 )}
                 {(profile?.role !== 'Cashier') && (
@@ -636,7 +619,6 @@ export default function App() {
             <h2 className="text-6xl font-serif italic mb-3 text-ink tracking-tight">
               {activeTab === 'dashboard' ? 'Business Intelligence' : 
                activeTab === 'inventory' ? 'Inventory Grid' : 
-               activeTab === 'orders' ? 'Order Management' : 
                activeTab === 'pos' ? 'Direct checkout' :
                activeTab === 'sales_history' ? 'Transaction archive' :
                activeTab === 'transfers' ? 'Stock Relocation' :
@@ -652,7 +634,6 @@ export default function App() {
                activeTab === 'transfers' ? 'Internal logistics and resource rebalancing' :
                activeTab === 'transfers_history' ? 'Verification trail for all branch movements' :
                activeTab === 'branches' ? 'Command center for all operational locations' :
-               activeTab === 'orders' ? 'Digital pipeline for internal stock requests' : 
                activeTab === 'orders_history' ? 'Retrospective on fulfillment and warehouse demand' : 'Raw event logs for security and auditing'}
             </p>
           </div>
@@ -839,19 +820,7 @@ export default function App() {
               {activeTab === 'history' && (
                 <HistoryTable transactions={transactions} branches={dbBranches} products={dbProducts} />
               )}
-              {activeTab === 'orders' && (
-                <OrdersView 
-                  orders={orders} 
-                  branches={dbBranches} 
-                  products={dbProducts} 
-                  createOrder={createOrder}
-                  dispatchOrder={dispatchOrder}
-                  cancelOrder={cancelOrder}
-                  acknowledgeOrder={acknowledgeOrder}
-                  profile={profile}
-                />
-              )}
-              {activeTab === 'pos' && (
+              {activeTab === 'pos' && profile?.role !== 'Warehouse' && (
                 <POSView 
                   products={dbProducts}
                   branches={dbBranches}
@@ -861,7 +830,7 @@ export default function App() {
                   profile={profile}
                 />
               )}
-              {activeTab === 'sales_history' && (
+              {activeTab === 'sales_history' && profile?.role !== 'Warehouse' && (
                 <SalesHistoryTable 
                   sales={sales}
                   branches={dbBranches}
@@ -889,6 +858,12 @@ export default function App() {
                   orders={orders}
                   branches={dbBranches}
                   products={dbProducts}
+                  initiateOrder={initiateOrder}
+                  fulfillOrder={fulfillOrder}
+                  dispatchOrder={dispatchOrder}
+                  cancelOrder={cancelOrder}
+                  confirmReceipt={confirmReceipt}
+                  profile={profile}
                 />
               )}
               {activeTab === 'branches' && (
