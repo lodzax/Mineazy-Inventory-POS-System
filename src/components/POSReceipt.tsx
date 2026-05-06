@@ -14,10 +14,9 @@ export default function POSReceipt({ sale, branch, cashier, products }: POSRecei
   const content = (
     <div id="printable-receipt-portal" className="fixed top-0 left-0 opacity-0 pointer-events-none print:opacity-100 print:pointer-events-auto w-[80mm] bg-white font-mono text-[11px] text-black leading-tight p-4">
       <div className="text-center mb-4">
-        <h1 className="text-lg font-bold uppercase tracking-widest mb-1">MineAzy</h1>
-        <p className="text-[9px] uppercase font-bold text-gray-400 mb-2">Inventory Intelligence Matrix</p>
+        <h1 className="text-lg font-bold uppercase tracking-widest mb-1">{branch?.name || 'MineAzy'}</h1>
+        <p className="text-[9px] uppercase font-bold text-gray-400 mb-2">Inventory Management System</p>
         <div className="w-full border-t border-black border-dashed my-1" />
-        <p className="font-bold text-sm tracking-tighter">{branch?.name || 'Unknown Branch'}</p>
         <p className="text-[10px]">{branch?.location || ''}</p>
         <p className="text-[10px]">TEL: +263 775 000 000</p>
       </div>
@@ -93,7 +92,7 @@ export default function POSReceipt({ sale, branch, cashier, products }: POSRecei
         <div className="w-full border-t border-black border-dashed my-3" />
         <p className="text-[9px] font-bold uppercase tracking-widest mb-1 text-gray-600">Verified System Audit</p>
         <p className="text-[8px] opacity-70">Goods sold are non-refundable.</p>
-        <p className="text-[8px] mt-1 italic tracking-widest">MINEAZY MATRIX</p>
+        <p className="text-[8px] mt-1 italic tracking-widest">OFFICIAL RECEIPT</p>
         
         <div className="mt-4 flex flex-col items-center gap-1">
            <div className="h-5 w-40 flex items-center justify-center gap-[1px]">
