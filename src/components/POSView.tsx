@@ -17,8 +17,10 @@ import {
   Printer,
   ArrowRight,
   CircleGauge,
-  X
+  X,
+  Download
 } from 'lucide-react';
+import POSReceipt from './POSReceipt';
 
 interface POSViewProps {
   products: any[];
@@ -165,6 +167,15 @@ export default function POSView({ products, branches, inventory, processSale, us
     doc.text("END OF STREAM. ALL TRANSACTIONS AUDITED AND LOGGED.", 105, finalY + 25, { align: "center" });
 
     doc.save(`Receipt_${lastSaleReceipt.id.toString()}.pdf`);
+  };
+
+  const handlePrint = () => {
+    window.focus();
+    document.body.classList.add('printing-receipt');
+    setTimeout(() => {
+      window.print();
+      document.body.classList.remove('printing-receipt');
+    }, 50);
   };
 
   const handleCheckout = async () => {
@@ -508,16 +519,22 @@ export default function POSView({ products, branches, inventory, processSale, us
               </div>
 
               <div className="flex flex-col gap-4">
-                <button 
-                  onClick={() => {
-                    generatePDF();
-                    window.print();
-                  }}
-                  className="w-full py-5 bg-background border-2 border-ink/5 text-ink rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-ink hover:text-white transition-all active:scale-95 shadow-sm"
-                >
-                  <Printer className="w-5 h-5 opacity-40" />
-                  Print Receipt
-                </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={handlePrint}
+                    className="flex-1 py-5 bg-ink text-white border-2 border-ink/5 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-primary transition-all active:scale-95 shadow-xl"
+                  >
+                    <Printer className="w-5 h-5 opacity-40" />
+                    Print
+                  </button>
+                  <button 
+                    onClick={generatePDF}
+                    className="flex-1 py-5 bg-background border-2 border-ink/5 text-ink rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-ink hover:text-white transition-all active:scale-95 shadow-sm"
+                  >
+                    <Download className="w-5 h-5 opacity-40" />
+                    PDF
+                  </button>
+                </div>
                 <button 
                   onClick={() => setLastSaleReceipt(null)}
                   className="w-full py-5 bg-ink text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
@@ -530,6 +547,13 @@ export default function POSView({ products, branches, inventory, processSale, us
           </motion.div>
         )}
       </AnimatePresence>
+
+      <POSReceipt 
+        sale={lastSaleReceipt}
+        branch={branches.find(b => b.id === lastSaleReceipt?.branch_id)}
+        cashier={user?.displayName || user?.email || 'System User'}
+        products={products}
+      />
     </div>
   );
 }

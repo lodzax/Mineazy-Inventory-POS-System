@@ -20,7 +20,8 @@ INSERT INTO branches (id, name, location) VALUES
 ('thobelani', 'Thobelani', 'Thobelani'),
 ('maphisa', 'Maphisa', 'Maphisa'),
 ('gweru-luton', 'Gweru-Luton Rd', 'Gweru'),
-('gweru-bradford', 'Gweru-Bradford rd', 'Gweru')
+('gweru-bradford', 'Gweru-Bradford rd', 'Gweru'),
+('donnington', 'Donnington Warehouse', 'Bulawayo')
 ON CONFLICT (id) DO NOTHING;
 
 -- Create profiles first as other tables reference it
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   branch_id TEXT REFERENCES branches(id) ON DELETE CASCADE,
   product_id TEXT REFERENCES products(id) ON DELETE CASCADE,
   stock DECIMAL(10,2) DEFAULT 0,
+  low_stock_threshold DECIMAL(10,2) DEFAULT 0,
   last_updated TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(branch_id, product_id)
 );

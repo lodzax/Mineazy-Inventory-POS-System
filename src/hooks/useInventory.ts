@@ -12,8 +12,13 @@ export enum OperationType {
 }
 
 function handleSupabaseError(error: any, operationType: OperationType, path: string | null) {
+  let message = error?.message || String(error);
+  if (message === "Failed to fetch") {
+    message = "Network Error: Failed to fetch. Please verify your connection and Supabase configuration.";
+  }
+  
   const errInfo = {
-    error: error?.message || String(error),
+    error: message,
     operationType,
     path
   };
@@ -43,6 +48,7 @@ export function useInventory() {
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
   const fetchingRef = React.useRef(false);
 
   // Consolidated Auth and Profile Listener
@@ -137,6 +143,7 @@ export function useInventory() {
     }
 
     fetchingRef.current = true;
+    setError(null);
     try {
       const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
       const userBranch = profile?.branch_id;
@@ -176,14 +183,23 @@ export function useInventory() {
       setData({
         branches: bData || [],
         products: pData || [],
-        inventory: (iData || []).map(i => ({ ...i, stock: Number(i.stock) })),
+        inventory: (iData || []).map(i => ({ 
+          ...i, 
+          stock: Number(i.stock),
+          low_stock_threshold: Number(i.low_stock_threshold || 0)
+        })),
         transactions: (tData || []).map(t => ({ ...t, amount: Number(t.amount) })),
         orders: oData || [],
         sales: (sData || []).map(s => ({ ...s, total: Number(s.total) })),
         transfers: trData || []
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch inventory data", err);
+      let message = err?.message || "Failed to connect to database";
+      if (message === "Failed to fetch") {
+        message = "Network Error: Failed to fetch. Please verify your Supabase URL and connection.";
+      }
+      setError(message);
     } finally {
       setLoading(false);
       fetchingRef.current = false;
@@ -631,6 +647,24 @@ export function useInventory() {
     }
   };
 
+  const updateThreshold = async (branchId: string, productId: string, threshold: number) => {
+    if (!user) return;
+    try {
+      const { error } = await supabase
+        .from('inventory')
+        .upsert({
+          branch_id: branchId,
+          product_id: productId,
+          low_stock_threshold: threshold,
+          last_updated: new Date().toISOString()
+        }, { onConflict: 'branch_id,product_id' });
+      if (error) throw error;
+      await fetchData();
+    } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'inventory/threshold');
+    }
+  };
+
   return { 
     branches, 
     products, 
@@ -644,6 +678,7 @@ export function useInventory() {
     addBranch,
     updateBranch,
     deleteBranch,
+    updateThreshold,
     initiateOrder,
     fulfillOrder,
     dispatchOrder,
@@ -653,6 +688,7 @@ export function useInventory() {
     transferStock,
     updateProduct,
     refreshData,
+    error,
     loading,
     authLoading,
     user,

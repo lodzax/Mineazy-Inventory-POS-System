@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Search, Filter, ArrowUpDown, PackageCheck, Truck, X, Plus, Trash2, Send } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, PackageCheck, Truck, X, Plus, Trash2, Send, Printer } from 'lucide-react';
 
 interface OrdersHistoryTableProps {
   orders: any[];
@@ -141,6 +141,14 @@ export default function OrdersHistoryTable({
             <option value="Cancelled">CANCELLED</option>
           </select>
         </div>
+
+        <button 
+          onClick={() => { window.focus(); window.print(); }}
+          className="px-8 py-5 bg-ink text-white border border-ink/5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 no-print"
+        >
+          <Printer className="w-4 h-4 text-primary" />
+          <span>Print Audit</span>
+        </button>
 
         {!isWarehouse && (
           <button 

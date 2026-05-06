@@ -30,7 +30,8 @@ import {
   ArrowRightLeft,
   Building2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Printer
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useInventory } from './hooks/useInventory';
@@ -92,6 +93,8 @@ export default function App() {
     addBranch,
     updateBranch,
     deleteBranch,
+    updateThreshold,
+    error,
     loading: dataLoading,
     authLoading,
     user,
@@ -348,11 +351,34 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex font-sans text-ink">
+    <div className="min-h-screen bg-background flex font-sans text-ink relative">
+      <AnimatePresence>
+        {error && (
+          <motion.div 
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -50, opacity: 0 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-lg px-4"
+          >
+            <div className="bg-danger/90 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-white/20">
+              <div className="flex items-center gap-3">
+                <Database className="w-5 h-5 flex-shrink-0" />
+                <p className="text-xs font-mono font-bold leading-tight">{error}</p>
+              </div>
+              <button 
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
+              >
+                Reconnect
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Sidebar - Desktop */}
       <motion.aside 
         animate={{ width: isSidebarCollapsed ? 100 : 288 }}
-        className="hidden lg:flex flex-col bg-ink p-6 text-white relative h-screen sticky top-0"
+        className="hidden lg:flex flex-col bg-ink p-6 text-white relative h-screen sticky top-0 no-print"
       >
         <button 
           onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -487,7 +513,7 @@ export default function App() {
       </motion.aside>
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-ink/5 h-16 z-40 flex items-center justify-between px-6 shadow-sm">
+      <header className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-ink/5 h-16 z-40 flex items-center justify-between px-6 shadow-sm no-print">
         <div className="flex items-center gap-3">
           <button onClick={() => setIsSidebarOpen(true)}>
             <Menu className="w-6 h-6 text-ink" />
@@ -614,7 +640,7 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 pt-24 lg:pt-12 px-6 lg:px-16 max-w-screen-2xl mx-auto w-full pb-12 overflow-y-auto">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-16">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-16 no-print">
           <div>
             <h2 className="text-6xl font-serif italic mb-3 text-ink tracking-tight">
               {activeTab === 'dashboard' ? 'Business Intelligence' : 
@@ -814,6 +840,7 @@ export default function App() {
                   products={dbProducts} 
                   onUpdate={(bid, pid, amt, type, notes = '') => updateStocks(bid, pid, amt, type, notes)}
                   updateProduct={updateProduct}
+                  updateThreshold={updateThreshold}
                   profile={profile}
                 />
               )}
@@ -919,69 +946,141 @@ function NavItem({ active, onClick, icon, label, collapsed }: { active: boolean,
 }
 
 function HistoryTable({ transactions, branches, products }: { transactions: any[], branches: any[], products: any[] }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
   const sorted = [...transactions].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  
+  const totalPages = Math.ceil(sorted.length / itemsPerPage);
+  const paginatedData = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
-    <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-xl shadow-ink/5">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-ink/5 bg-background font-mono text-[9px] uppercase text-ink/40 font-bold tracking-[0.2em]">
-              <th className="px-8 py-6">Time Cycle</th>
-              <th className="px-8 py-6">Operation</th>
-              <th className="px-8 py-6">Node</th>
-              <th className="px-8 py-6">Resource</th>
-              <th className="px-8 py-6 text-right">Magnitude</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink/[0.03]">
-            {sorted.map((tx, idx) => {
-              const branch = branches.find(b => b.id === tx.branch_id);
-              const product = products.find(p => p.id === tx.product_id);
-              return (
-                <tr key={idx} className="text-sm hover:bg-background/50 transition-colors group">
-                  <td className="px-8 py-5">
-                    <div className="flex flex-col">
-                      <span className="font-mono text-[11px] text-ink/60 font-bold">
-                        {tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row gap-6 items-center justify-between px-2">
+        <div className="h-px flex-1 bg-ink/5 hidden md:block" />
+        <button 
+          onClick={() => { window.focus(); window.print(); }}
+          className="px-8 py-4 bg-ink text-white border border-ink/5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 no-print"
+        >
+          <Printer className="w-4 h-4 text-primary" />
+          <span>Print Audit</span>
+        </button>
+      </div>
+      <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-xl shadow-ink/5">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-ink/5 bg-background font-mono text-[9px] uppercase text-ink/40 font-bold tracking-[0.2em]">
+                <th className="px-8 py-6">Time Cycle</th>
+                <th className="px-8 py-6">Operation</th>
+                <th className="px-8 py-6">Node</th>
+                <th className="px-8 py-6">Resource</th>
+                <th className="px-8 py-6 text-right">Magnitude</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink/[0.03]">
+              {paginatedData.map((tx, idx) => {
+                const branch = branches.find(b => b.id === tx.branch_id);
+                const product = products.find(p => p.id === tx.product_id);
+                return (
+                  <tr key={idx} className="text-sm hover:bg-background/50 transition-colors group">
+                    <td className="px-8 py-5">
+                      <div className="flex flex-col">
+                        <span className="font-mono text-[11px] text-ink/60 font-bold">
+                          {tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                        </span>
+                        <span className="text-[10px] text-ink/30 font-mono">
+                          {tx.timestamp ? new Date(tx.timestamp).toLocaleDateString() : 'Pending'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      <span className={`text-[10px] font-mono font-black uppercase px-2 py-1 rounded-md ${
+                        tx.type === 'add' ? 'bg-accent/10 text-accent' : 'bg-danger/10 text-danger'
+                      }`}>
+                        {tx.type}
                       </span>
-                      <span className="text-[10px] text-ink/30 font-mono">
-                        {tx.timestamp ? new Date(tx.timestamp).toLocaleDateString() : 'Pending'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className={`text-[10px] font-mono font-black uppercase px-2 py-1 rounded-md ${
-                      tx.type === 'add' ? 'bg-accent/10 text-accent' : 'bg-danger/10 text-danger'
+                    </td>
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary/40" />
+                        <span className="font-bold text-ink/80 text-xs">{branch?.name || tx.branch_id}</span>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-ink/70 text-xs font-medium">{product?.name || tx.product_id}</td>
+                    <td className={`px-8 py-5 text-right font-mono font-bold text-base tracking-tighter ${
+                      tx.type === 'add' ? 'text-accent' : 'text-danger'
                     }`}>
-                      {tx.type}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary/40" />
-                      <span className="font-bold text-ink/80 text-xs">{branch?.name || tx.branch_id}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5 text-ink/70 text-xs font-medium">{product?.name || tx.product_id}</td>
-                  <td className={`px-8 py-5 text-right font-mono font-bold text-base tracking-tighter ${
-                    tx.type === 'add' ? 'text-accent' : 'text-danger'
-                  }`}>
-                    {tx.type === 'add' ? '+' : '-'}{tx.amount}
+                      {tx.type === 'add' ? '+' : '-'}{tx.amount}
+                    </td>
+                  </tr>
+                );
+              })}
+              {sorted.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-8 py-20 text-center text-ink/30 font-serif italic text-lg">
+                    Zero movement detected in system logs.
                   </td>
                 </tr>
-              );
-            })}
-            {sorted.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-8 py-20 text-center text-ink/30 font-serif italic text-lg">
-                  Zero movement detected in system logs.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-8 py-4 bg-white rounded-3xl border border-ink/5 shadow-sm">
+          <p className="text-[10px] font-mono font-bold text-ink/40 uppercase tracking-widest">
+            Showing <span className="text-ink">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="text-ink">{Math.min(currentPage * itemsPerPage, sorted.length)}</span> of <span className="text-ink">{sorted.length}</span> entries
+          </p>
+          <div className="flex items-center gap-2">
+            <button 
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              className="p-2 hover:bg-background rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-1">
+              {[...Array(totalPages)].map((_, i) => {
+                const pageNum = i + 1;
+                // Show pages around current page if there are many pages
+                if (
+                  totalPages > 7 &&
+                  pageNum !== 1 &&
+                  pageNum !== totalPages &&
+                  (pageNum < currentPage - 1 || pageNum > currentPage + 1)
+                ) {
+                  if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
+                    return <span key={pageNum} className="text-ink/20">...</span>;
+                  }
+                  return null;
+                }
+
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`min-w-8 h-8 rounded-xl font-mono text-[10px] font-bold transition-all ${
+                      currentPage === pageNum 
+                        ? 'bg-ink text-white shadow-lg' 
+                        : 'text-ink/40 hover:bg-background hover:text-ink'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            <button 
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              className="p-2 hover:bg-background rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

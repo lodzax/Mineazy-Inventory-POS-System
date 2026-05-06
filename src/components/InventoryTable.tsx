@@ -10,10 +10,11 @@ interface InventoryTableProps {
   products: any[];
   onUpdate: (branchId: string, productId: string, amount: number, type: 'add' | 'remove', notes: string) => void;
   updateProduct: (id: string, updates: { price?: number, cost_price?: number, unit?: string, name?: string }) => void;
+  updateThreshold: (branchId: string, productId: string, threshold: number) => void;
   profile: any;
 }
 
-export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, profile }: InventoryTableProps) {
+export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, updateThreshold, profile }: InventoryTableProps) {
   const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
   const [selectedBranch, setSelectedBranch] = useState<string>(isLimited ? (profile?.branch_id || branches[0]?.id) : 'all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -25,6 +26,8 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
   const [qrModal, setQrModal] = useState<{ branchId: string, productId: string } | null>(null);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ name: '', unit: '', price: '', cost_price: '' });
+  const [thresholdUpdate, setThresholdUpdate] = useState<{ branchId: string, productId: string, current: number } | null>(null);
+  const [thresholdAmount, setThresholdAmount] = useState<string>('');
 
   const filteredProducts = products.filter(p => {
     const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter;
@@ -59,9 +62,11 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
     const matchesStock = stockLevelFilter === 'all' || filteredProducts.some(p => {
       const inv = inventory.find(i => i.branch_id === b.id && i.product_id === p.id);
       const stock = inv ? inv.stock : 0;
-      if (stockLevelFilter === 'critical') return stock <= 5;
-      if (stockLevelFilter === 'low') return stock > 5 && stock <= 15;
-      if (stockLevelFilter === 'in-stock') return stock > 15;
+      const threshold = inv ? (inv.low_stock_threshold || 5) : 5;
+      
+      if (stockLevelFilter === 'critical') return stock === 0;
+      if (stockLevelFilter === 'low') return stock > 0 && stock <= threshold;
+      if (stockLevelFilter === 'in-stock') return stock > threshold;
       return true;
     });
 
@@ -90,6 +95,15 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
         cost_price: parseFloat(editForm.cost_price)
       });
       setEditingProduct(null);
+    }
+  };
+
+  const handleThresholdSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (thresholdUpdate && thresholdAmount !== '') {
+      updateThreshold(thresholdUpdate.branchId, thresholdUpdate.productId, parseFloat(thresholdAmount));
+      setThresholdUpdate(null);
+      setThresholdAmount('');
     }
   };
 
@@ -254,12 +268,70 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
       </AnimatePresence>
 
       <AnimatePresence>
-        {activeQRData && (
+        {qrModal && activeQRData && (
           <QRCodeModal 
             branch={activeQRData.branch}
             product={activeQRData.product}
             onClose={() => setQrModal(null)}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {thresholdUpdate && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4 backdrop-blur-md"
+          >
+            <motion.form 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              onSubmit={handleThresholdSubmit}
+              className="bg-white p-10 rounded-[3rem] w-full max-w-sm border border-white/10 shadow-2xl space-y-8"
+            >
+              <div>
+                <h3 className="text-3xl font-serif font-medium text-ink">Alert Threshold</h3>
+                <p className="text-[10px] font-mono text-primary uppercase font-bold tracking-widest mt-1">Configurable Safety Magnitude</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Low Stock Limit</label>
+                <div className="relative">
+                  <input 
+                    type="number"
+                    required
+                    autoFocus
+                    value={thresholdAmount}
+                    onChange={(e) => setThresholdAmount(e.target.value)}
+                    className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono font-bold text-2xl"
+                    min="0"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-mono font-black text-ink/20 uppercase">Units</div>
+                </div>
+                <p className="text-[10px] text-ink/40 mt-3 leading-relaxed italic">
+                  When inventory falls below this value at this specific node, critical UI visual indicators will activate.
+                </p>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => setThresholdUpdate(null)}
+                  className="flex-1 py-4 font-bold text-[10px] text-ink uppercase tracking-widest hover:bg-background rounded-2xl transition-all"
+                >
+                  Discard
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-4 font-bold text-[10px] bg-ink text-white rounded-2xl uppercase tracking-[0.2em] shadow-xl hover:translate-y-[-2px] transition-all"
+                >
+                   Stabilize
+                </button>
+              </div>
+            </motion.form>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -299,9 +371,9 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
               className="w-full px-6 py-3.5 bg-white border border-ink/5 rounded-2xl font-sans text-xs font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01]"
             >
               <option value="all">All Levels</option>
-              <option value="critical">Critical (≤5)</option>
-              <option value="low">Low (6-15)</option>
-              <option value="in-stock">In-Stock (&gt;15)</option>
+              <option value="critical">Depleted (0)</option>
+              <option value="low">Low Stock (≤ Threshold)</option>
+              <option value="in-stock">In-Stock (&gt; Threshold)</option>
             </select>
           </div>
 
@@ -382,12 +454,20 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                   {filteredProducts.map(product => {
                     const item = inventory.find(i => i.branch_id === branch.id && i.product_id === product.id);
                     const stock = item ? item.stock : 0;
-                    const isCritical = stock <= 5;
-                    const isLow = stock > 5 && stock <= 15;
+                    const threshold = item ? (item.low_stock_threshold || 5) : 5;
+                    const isCritical = stock === 0;
+                    const isLow = stock > 0 && stock <= threshold;
                     return (
                       <td key={product.id} className="px-8 py-8">
                         <div className="flex items-center gap-8">
-                          <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-[2rem] border-2 transition-all ${
+                          <div 
+                            onClick={() => {
+                              if (!isLimited) {
+                                setThresholdUpdate({ branchId: branch.id, productId: product.id, current: threshold });
+                                setThresholdAmount(threshold.toString());
+                              }
+                            }}
+                            className={`flex flex-col items-center justify-center w-20 h-20 rounded-[2rem] border-2 transition-all cursor-pointer group/stock relative ${
                             isCritical 
                               ? 'bg-danger/5 border-danger text-danger shadow-lg shadow-danger/10 scale-110' 
                               : isLow
@@ -396,6 +476,16 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                           }`}>
                             <span className="font-mono text-2xl font-black tracking-tighter">{stock}</span>
                             <span className="text-[9px] font-mono opacity-40 uppercase font-black">Level</span>
+                            
+                            {!isLimited && (
+                              <div className="absolute -top-2 -right-2 w-6 h-6 bg-white border border-ink/10 rounded-lg flex items-center justify-center shadow-sm opacity-0 group-hover/stock:opacity-100 transition-opacity">
+                                <Edit3 className="w-3 h-3 text-ink/40" />
+                              </div>
+                            )}
+                            
+                            <div className="absolute -bottom-6 opacity-0 group-hover/stock:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                               <p className="text-[8px] font-mono font-bold text-ink/20 uppercase tracking-tighter">Threshold: {threshold}</p>
+                            </div>
                           </div>
                           
                           <div className="flex gap-2">

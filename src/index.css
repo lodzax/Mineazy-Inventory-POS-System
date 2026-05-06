@@ -42,3 +42,46 @@
   @apply bg-primary/40;
 }
 
+/* Print Styles */
+@media print {
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+
+  .no-print, .no-print * {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    color: black !important;
+  }
+
+  /* Receipt Specific Styles */
+  body.printing-receipt {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.printing-receipt #root {
+    display: none !important;
+  }
+
+  body.printing-receipt #printable-receipt-portal {
+    display: block !important;
+    visibility: visible !important;
+    position: relative !important;
+    width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 8mm 4mm !important;
+    background: white !important;
+    min-height: 100vh;
+  }
+
+  body.printing-receipt #printable-receipt-portal * {
+    visibility: visible !important;
+  }
+}
+

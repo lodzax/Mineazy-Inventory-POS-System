@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Search, Filter, Printer, User, Download, FileText, Calendar, ArrowRight } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import POSReceipt from './POSReceipt';
 
 interface SalesHistoryTableProps {
   sales: any[];
@@ -16,6 +17,16 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
   const [productFilter, setProductFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedSale, setSelectedSale] = useState<any | null>(null);
+  const handlePrintReceipt = (sale: any) => {
+    setSelectedSale(sale);
+    window.focus();
+    document.body.classList.add('printing-receipt');
+    setTimeout(() => {
+      window.print();
+      document.body.classList.remove('printing-receipt');
+    }, 50);
+  };
 
   const filteredSales = sales.filter(sale => {
     const branch = branches.find(b => b.id === sale.branch_id);
@@ -194,6 +205,13 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
 
         <div className="lg:col-span-3 flex gap-3">
           <button 
+            onClick={() => { window.focus(); window.print(); }}
+            className="flex-1 px-4 py-4 bg-ink text-white border border-ink/5 rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 no-print"
+          >
+            <Printer className="w-4 h-4 text-primary" />
+            Print Audit
+          </button>
+          <button 
             onClick={exportCSV}
             className="flex-1 px-4 py-4 bg-white border border-ink/5 text-ink rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 hover:bg-background transition-all shadow-xl shadow-ink/[0.01]"
           >
@@ -260,7 +278,17 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
                       </div>
                     </td>
                     <td className="px-8 py-6 text-right font-mono font-black text-ink text-xl tracking-tighter">
-                      ${(sale.total || 0).toFixed(2)}
+                      <div className="flex items-center justify-end gap-4">
+                        <button 
+                          onClick={() => handlePrintReceipt(sale)}
+                          className="flex items-center gap-2 px-3 py-2 bg-ink text-white hover:bg-primary transition-all rounded-xl no-print shadow-lg shadow-ink/10"
+                          title="Reprint POS Receipt"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span className="text-[9px] font-black uppercase tracking-widest">Receipt</span>
+                        </button>
+                        <span>${(sale.total || 0).toFixed(2)}</span>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -279,6 +307,13 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
           </table>
         </div>
       </div>
+
+      <POSReceipt 
+        sale={selectedSale}
+        branch={branches.find(b => b.id === selectedSale?.branch_id)}
+        cashier={selectedSale?.cashier_name || 'System User'}
+        products={products}
+      />
     </div>
   );
 }
