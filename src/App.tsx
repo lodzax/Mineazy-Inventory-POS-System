@@ -31,7 +31,11 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  Printer
+  Printer,
+  FileDown,
+  Filter,
+  Search,
+  Calendar
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useInventory } from './hooks/useInventory';
@@ -42,6 +46,8 @@ import OrdersHistoryTable from './components/OrdersHistoryTable';
 import POSView from './components/POSView';
 import SalesHistoryTable from './components/SalesHistoryTable';
 import BranchesView from './components/BranchesView';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const branches = [
   "Belmont", "Junkshop", "Tongogara", "Esigodini 1", "Esigodini 2", 
@@ -77,6 +83,8 @@ export default function App() {
     transactions, 
     orders, 
     sales,
+    transfers,
+    profiles,
     updateStocks, 
     addProduct, 
     initiateOrder,
@@ -812,6 +820,7 @@ export default function App() {
                   orders={orders}
                   branches={dbBranches}
                   products={dbProducts}
+                  profiles={profiles}
                   initiateOrder={initiateOrder}
                   processOrder={processOrder}
                   cancelOrder={cancelOrder}
@@ -873,23 +882,195 @@ function NavItem({ active, onClick, icon, label, collapsed }: { active: boolean,
 
 function HistoryTable({ transactions, branches, products }: { transactions: any[], branches: any[], products: any[] }) {
   const [currentPage, setCurrentPage] = useState(1);
+  const [filterBranch, setFilterBranch] = useState<string>('all');
+  const [filterProduct, setFilterProduct] = useState<string>('all');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<string>('');
+  
   const itemsPerPage = 15;
-  const sorted = [...transactions].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  // Filter logic
+  const filtered = transactions.filter(tx => {
+    if (filterBranch !== 'all' && tx.branch_id !== filterBranch) return false;
+    if (filterProduct !== 'all' && tx.product_id !== filterProduct) return false;
+    if (filterType !== 'all' && tx.type !== filterType) return false;
+    if (filterDate) {
+      const txDate = new Date(tx.timestamp).toISOString().split('T')[0];
+      if (txDate !== filterDate) return false;
+    }
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   
   const totalPages = Math.ceil(sorted.length / itemsPerPage);
   const paginatedData = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    
+    // Add Header
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MINEAZY TRANSACTION LOGS', 105, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 105, 28, { align: 'center' });
+    
+    // Add Active Filters info
+    let filterString = "Filters: ";
+    if (filterBranch !== 'all') filterString += `Branch: ${branches.find(b => b.id === filterBranch)?.name || filterBranch} | `;
+    if (filterProduct !== 'all') filterString += `Product: ${products.find(p => p.id === filterProduct)?.name || filterProduct} | `;
+    if (filterType !== 'all') filterString += `Type: ${filterType} | `;
+    if (filterDate) filterString += `Date: ${filterDate} | `;
+    if (filterString === "Filters: ") filterString += "None";
+    
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(filterString, 105, 35, { align: 'center' });
+
+    const tableData = sorted.map(tx => {
+      const branch = branches.find(b => b.id === tx.branch_id);
+      const product = products.find(p => p.id === tx.product_id);
+      return [
+        new Date(tx.timestamp).toLocaleString(),
+        tx.type.toUpperCase(),
+        branch?.name || tx.branch_id,
+        product?.name || tx.product_id,
+        tx.notes || '-',
+        `${tx.type === 'add' ? '+' : '-'}${tx.amount}`
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Timestamp', 'Type', 'Branch', 'Product', 'Notes', 'Amount']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 30, 30], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        5: { halign: 'right', fontStyle: 'bold' }
+      }
+    });
+
+    doc.save(`transaction_logs_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
+      <div className="bg-white p-8 rounded-[2.5rem] border border-ink/5 shadow-xl shadow-ink/5 no-print">
+        <div className="flex items-center gap-3 mb-6">
+          <Filter className="w-5 h-5 text-primary" />
+          <h3 className="text-xl font-serif font-medium">Refine Logs</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By Node</label>
+            <div className="relative">
+              <select 
+                value={filterBranch}
+                onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
+              >
+                <option value="all">All Branches</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By Resource</label>
+            <div className="relative">
+              <select 
+                value={filterProduct}
+                onChange={(e) => { setFilterProduct(e.target.value); setCurrentPage(1); }}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
+              >
+                <option value="all">All Products</option>
+                {products.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <Package className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Operation Type</label>
+            <div className="relative">
+              <select 
+                value={filterType}
+                onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
+              >
+                <option value="all">Any Operation</option>
+                <option value="add">Addition (+)</option>
+                <option value="subtract">Subtraction (-)</option>
+                <option value="transfer">Transfer</option>
+                <option value="sale">Point of Sale</option>
+                <option value="restock">Restock</option>
+              </select>
+              <ArrowRightLeft className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Specific Date</label>
+            <div className="relative">
+              <input 
+                type="date"
+                value={filterDate}
+                onChange={(e) => { setFilterDate(e.target.value); setCurrentPage(1); }}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
+              />
+              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
+        </div>
+
+        {(filterBranch !== 'all' || filterProduct !== 'all' || filterType !== 'all' || filterDate) && (
+          <div className="mt-6 flex justify-end">
+            <button 
+              onClick={() => {
+                setFilterBranch('all');
+                setFilterProduct('all');
+                setFilterType('all');
+                setFilterDate('');
+                setCurrentPage(1);
+              }}
+              className="text-[10px] font-mono font-black uppercase tracking-widest text-primary hover:underline flex items-center gap-2"
+            >
+              <X className="w-3 h-3" />
+              Reset All Filters
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="flex flex-col md:flex-row gap-6 items-center justify-between px-2">
         <div className="h-px flex-1 bg-ink/5 hidden md:block" />
-        <button 
-          onClick={() => { window.focus(); window.print(); }}
-          className="px-8 py-4 bg-ink text-white border border-ink/5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 no-print"
-        >
-          <Printer className="w-4 h-4 text-primary" />
-          <span>Print Audit</span>
-        </button>
+        <div className="flex items-center gap-3 no-print">
+          <button 
+            onClick={exportToPDF}
+            className="px-8 py-4 bg-primary text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
+          >
+            <FileDown className="w-4 h-4" />
+            <span>Export PDF</span>
+          </button>
+          <button 
+            onClick={() => { window.focus(); window.print(); }}
+            className="px-8 py-4 bg-ink text-white border border-ink/5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
+          >
+            <Printer className="w-4 h-4 text-primary" />
+            <span>Print Audit</span>
+          </button>
+        </div>
       </div>
       <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-xl shadow-ink/5">
         <div className="overflow-x-auto">

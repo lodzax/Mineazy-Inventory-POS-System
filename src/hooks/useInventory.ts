@@ -34,7 +34,8 @@ export function useInventory() {
     transactions: any[],
     orders: any[],
     sales: any[],
-    transfers: any[]
+    transfers: any[],
+    profiles: any[]
   }>({
     branches: [],
     products: [],
@@ -42,7 +43,8 @@ export function useInventory() {
     transactions: [],
     orders: [],
     sales: [],
-    transfers: []
+    transfers: [],
+    profiles: []
   });
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
@@ -204,6 +206,7 @@ export function useInventory() {
       let tQuery = supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(100);
       let oQuery = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
       let sQuery = supabase.from('sales').select('*').order('timestamp', { ascending: false }).limit(100);
+      let pAllQuery = supabase.from('profiles').select('id, email, role');
 
       if (isLimited && userBranch) {
         const normalizedBranch = userBranch.toLowerCase();
@@ -222,7 +225,7 @@ export function useInventory() {
 
       // Perform queries one by one or in smaller chunks if parallel is struggling
       // For now, let's stick to Promise.all but with a better timeout and logging
-      const queriesPromises = Promise.all([bQuery, pQuery, iQuery, tQuery, oQuery, sQuery]);
+      const queriesPromises = Promise.all([bQuery, pQuery, iQuery, tQuery, oQuery, sQuery, pAllQuery]);
       
       const results = await Promise.race([
         queriesPromises,
@@ -235,11 +238,12 @@ export function useInventory() {
         { data: iData, error: iErr },
         { data: tData, error: tErr },
         { data: oData, error: oErr },
-        { data: sData, error: sErr }
+        { data: sData, error: sErr },
+        { data: prData, error: prErr }
       ] = results;
 
-      if (bErr || pErr || iErr || tErr || oErr || sErr) {
-        console.warn("[fetchData] One or more queries failed:", { bErr, pErr, iErr, tErr, oErr, sErr });
+      if (bErr || pErr || iErr || tErr || oErr || sErr || prErr) {
+        console.warn("[fetchData] One or more queries failed:", { bErr, pErr, iErr, tErr, oErr, sErr, prErr });
       }
 
       setData({
@@ -253,6 +257,7 @@ export function useInventory() {
         transactions: (tData || []).map((t: any) => ({ ...t, amount: Number(t.amount) })),
         orders: oData || [],
         sales: (sData || []).map((s: any) => ({ ...s, total: Number(s.total) })),
+        profiles: prData || [],
         transfers: []
       });
       console.log("[fetchData] Success.");
@@ -281,7 +286,7 @@ export function useInventory() {
     await fetchData();
   };
 
-  const { branches, products, inventory, transactions, orders, sales, transfers } = data;
+  const { branches, products, inventory, transactions, orders, sales, transfers, profiles } = data;
 
   const batchUpdateStocks = async (updates: {
     branchId: string,
@@ -643,7 +648,7 @@ export function useInventory() {
     }
   };
 
-  const cancelOrder = async (orderId: string | number) => {
+  const cancelOrder = async (orderId: string | number, reason: string = '') => {
     if (!user) return;
     try {
       const { data: order, error: fetchError } = await supabase
@@ -659,6 +664,21 @@ export function useInventory() {
         .update({ status: 'Cancelled' })
         .eq('id', orderId);
       if (error) throw error;
+
+      // Log transactions for audit trail
+      if (order.items && order.items.length > 0) {
+        const transactionPayloads = order.items.map((item: any) => ({
+          branch_id: order.branch_id,
+          product_id: item.productId,
+          amount: 0,
+          type: 'remove', // Arbitrary type since it's 0 amount, just for logging
+          notes: `ORDER #${String(orderId).slice(0, 8)} Cancellation${reason ? `: ${reason}` : ''}`,
+          user_id: user.id,
+          timestamp: new Date().toISOString()
+        }));
+
+        await supabase.from('transactions').insert(transactionPayloads);
+      }
 
       const bName = (order.branches as any)?.name || 'Branch';
 
@@ -936,6 +956,7 @@ export function useInventory() {
     orders, 
     sales,
     transfers,
+    profiles,
     updateStocks, 
     batchUpdateStocks,
     addProduct, 

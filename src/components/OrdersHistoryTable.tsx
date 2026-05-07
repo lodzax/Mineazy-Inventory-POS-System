@@ -1,15 +1,34 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Search, Filter, ArrowUpDown, PackageCheck, Truck, X, Plus, Trash2, Send, Printer, FileText } from 'lucide-react';
+import { 
+  Search, 
+  Filter, 
+  ArrowUpDown, 
+  PackageCheck, 
+  Truck, 
+  X, 
+  Plus, 
+  Trash2, 
+  Send, 
+  Printer, 
+  FileText,
+  FileDown,
+  Building2,
+  Calendar,
+  Layers
+} from 'lucide-react';
 import { generateInvoicePDF } from '../lib/invoiceGenerator';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface OrdersHistoryTableProps {
   orders: any[];
   branches: any[];
   products: any[];
+  profiles: any[];
   initiateOrder: (branchId: string, items: any[], notes: string) => Promise<any>;
   processOrder: (orderId: string | number, items: any[], notes: string) => void;
-  cancelOrder: (orderId: string | number) => void;
+  cancelOrder: (orderId: string | number, reason?: string) => void;
   confirmReceipt: (orderId: string | number) => void;
   profile: any;
 }
@@ -18,6 +37,7 @@ export default function OrdersHistoryTable({
   orders, 
   branches, 
   products, 
+  profiles,
   initiateOrder,
   processOrder, 
   cancelOrder, 
@@ -26,7 +46,12 @@ export default function OrdersHistoryTable({
 }: OrdersHistoryTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
+  
   const [processingOrder, setProcessingOrder] = useState<any | null>(null);
+  const [cancellingOrder, setCancellingOrder] = useState<any | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
   const [processingItems, setProcessingItems] = useState<any[]>([]);
   const [fNotes, setFNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,10 +82,66 @@ export default function OrdersHistoryTable({
     const matchesSearch = branch?.name.toLowerCase().includes(search.toLowerCase()) || 
                           order.id.toString().toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'all' || order.status.toLowerCase() === statusFilter.toLowerCase();
-    return matchesSearch && matchesStatus;
+    const matchesBranch = branchFilter === 'all' || order.branch_id === branchFilter;
+    
+    let matchesDate = true;
+    if (dateFilter && order.created_at) {
+      const orderDate = new Date(order.created_at).toISOString().split('T')[0];
+      matchesDate = orderDate === dateFilter;
+    }
+
+    return matchesSearch && matchesStatus && matchesBranch && matchesDate;
   });
 
   const sortedOrders = [...filteredOrders].sort((a, b) => (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0));
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MINEAZY ORDER LOGS', 105, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 105, 28, { align: 'center' });
+    
+    // Filters Header
+    let filterString = "Active Filters: ";
+    if (statusFilter !== 'all') filterString += `Status: ${statusFilter} | `;
+    if (branchFilter !== 'all') filterString += `Branch: ${branches.find(b => b.id === branchFilter)?.name || branchFilter} | `;
+    if (dateFilter) filterString += `Date: ${dateFilter} | `;
+    if (filterString === "Active Filters: ") filterString += "None";
+    
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(filterString, 105, 35, { align: 'center' });
+
+    const tableData = sortedOrders.map(order => {
+      const branch = branches.find(b => b.id === order.branch_id);
+      return [
+        new Date(order.created_at).toLocaleString(),
+        `#${order.id.toString().slice(0, 8)}`,
+        branch?.name || order.branch_id,
+        order.items.map((it: any) => {
+          const product = products.find(p => p.id === it.productId);
+          return `${it.quantity}x ${product?.name || it.productId}`;
+        }).join('\n'),
+        order.status.toUpperCase()
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Timestamp', 'Order ID', 'Branch Node', 'Manifest Content', 'Protocol Status']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 30, 30], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { fontSize: 7, cellPadding: 2 },
+    });
+
+    doc.save(`order_history_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
   const openProcessing = (order: any) => {
     setProcessingOrder(order);
@@ -112,6 +193,20 @@ export default function OrdersHistoryTable({
     setProcessingItems(newItems);
   };
 
+  const handleCancelSubmit = async () => {
+    if (!cancellingOrder) return;
+    setIsSubmitting(true);
+    try {
+      await cancelOrder(cancellingOrder.id, cancellationReason);
+      setCancellingOrder(null);
+      setCancellationReason('');
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleInitiateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newOrderBranch || newOrderItems.length === 0) return;
@@ -121,7 +216,7 @@ export default function OrdersHistoryTable({
       if (order && isWarehouse) {
         // Auto-generate invoice for warehouse users
         const branch = branches.find(b => b.id === newOrderBranch);
-        generateInvoicePDF(order, branch, products);
+        generateInvoicePDF(order, branch, products, profiles);
       }
       setShowInitiateModal(false);
       setNewOrderItems([]);
@@ -149,44 +244,115 @@ export default function OrdersHistoryTable({
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-        <div className="relative w-full md:w-[450px]">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
-          <input 
-            type="text"
-            placeholder="Search order stream..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-14 pr-6 py-5 bg-white border border-ink/5 rounded-[2rem] shadow-xl shadow-ink/[0.01] focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all font-medium text-xs"
-          />
+      <div className="bg-white p-8 rounded-[2.5rem] border border-ink/5 shadow-xl shadow-ink/5 no-print">
+        <div className="flex items-center gap-3 mb-6">
+          <Filter className="w-5 h-5 text-primary" />
+          <h3 className="text-xl font-serif font-medium">Refine Orders</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By node</label>
+            <div className="relative">
+              <select 
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
+              >
+                <option value="all">All Branches</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Protocol Status</label>
+            <div className="relative">
+              <select 
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
+              >
+                <option value="all">Any Status</option>
+                <option value="Pending">Pending</option>
+                <option value="In-Transit">In-Transit</option>
+                <option value="Received">Received</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+              <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Specific Date</label>
+            <div className="relative">
+              <input 
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
+              />
+              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Search ID/Name</label>
+            <div className="relative">
+              <input 
+                type="text"
+                placeholder="Search stream..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
+              />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4 bg-white p-2 border border-ink/5 rounded-[1.5rem] shadow-xl shadow-ink/[0.01]">
-          <Filter className="w-4 h-4 text-primary ml-3" />
-          <select 
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-6 py-3 bg-background border-none rounded-xl font-mono text-[10px] font-black uppercase tracking-[0.2em] text-ink focus:outline-none appearance-none cursor-pointer pr-12 min-w-[200px]"
+        {(branchFilter !== 'all' || statusFilter !== 'all' || dateFilter || search) && (
+          <div className="mt-6 flex justify-end">
+            <button 
+              onClick={() => {
+                setBranchFilter('all');
+                setStatusFilter('all');
+                setDateFilter('');
+                setSearch('');
+              }}
+              className="text-[10px] font-mono font-black uppercase tracking-widest text-primary hover:underline flex items-center gap-2"
+            >
+              <X className="w-3 h-3" />
+              Reset All Filters
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-6 items-center justify-between no-print">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={exportToPDF}
+            className="px-8 py-4 bg-primary text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
           >
-            <option value="all">ALL PROTOCOLS</option>
-            <option value="Pending">PENDING</option>
-            <option value="In-Transit">IN-TRANSIT</option>
-            <option value="Received">RECEIVED</option>
-            <option value="Cancelled">CANCELLED</option>
-          </select>
+            <FileDown className="w-4 h-4" />
+            <span>Export PDF</span>
+          </button>
+          <button 
+            onClick={() => { window.focus(); window.print(); }}
+            className="px-8 py-4 bg-ink text-white border border-ink/5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
+          >
+            <Printer className="w-4 h-4 text-primary" />
+            <span>Print Audit</span>
+          </button>
         </div>
-
-        <button 
-          onClick={() => { window.focus(); window.print(); }}
-          className="px-8 py-5 bg-ink text-white border border-ink/5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 no-print"
-        >
-          <Printer className="w-4 h-4 text-primary" />
-          <span>Print Audit</span>
-        </button>
 
         <button 
           onClick={() => setShowInitiateModal(true)}
-          className="px-8 py-5 bg-ink text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
+          className="px-8 py-5 bg-ink text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95 w-full md:w-auto"
         >
           <Plus className="w-4 h-4" />
           <span>Initiate Requisition</span>
@@ -249,7 +415,7 @@ export default function OrdersHistoryTable({
                       <div className="flex items-center justify-end gap-2">
                         {isWarehouse && (order.status === 'In-Transit' || order.status === 'Received') && (
                           <button 
-                            onClick={() => generateInvoicePDF(order, branch, products)}
+                            onClick={() => generateInvoicePDF(order, branch, products, profiles)}
                             className="p-3 bg-secondary/10 text-secondary rounded-xl hover:bg-secondary hover:text-white transition-all active:scale-95"
                             title="Download Invoice"
                           >
@@ -276,7 +442,10 @@ export default function OrdersHistoryTable({
                         )}
                         {((isAdmin && order.status !== 'Cancelled' && order.status !== 'Received') || (!isWarehouse && order.status === 'Pending')) && (
                           <button 
-                            onClick={() => cancelOrder(order.id)}
+                            onClick={() => {
+                              setCancellingOrder(order);
+                              setCancellationReason('');
+                            }}
                             className="p-3 bg-danger/10 text-danger rounded-xl hover:bg-danger hover:text-white transition-all active:scale-95"
                             title="Cancel Order"
                           >
@@ -416,6 +585,64 @@ export default function OrdersHistoryTable({
                 >
                   {isSubmitting ? <ArrowUpDown className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
                   {isSubmitting ? 'Processing...' : 'Acknowledge & Ship'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Cancellation Modal */}
+      {cancellingOrder && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setCancellingOrder(null)}
+            className="absolute inset-0 bg-ink/60 backdrop-blur-md"
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="relative w-full max-w-md bg-white rounded-[3rem] shadow-2xl overflow-hidden border border-ink/5"
+          >
+            <div className="p-10 space-y-8 text-center">
+              <div className="w-20 h-20 bg-danger/10 text-danger rounded-3xl flex items-center justify-center mx-auto">
+                <Trash2 className="w-10 h-10" />
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-3xl font-serif font-medium text-ink italic">Abort Protocol?</h3>
+                <p className="text-[10px] font-mono text-ink/40 font-bold uppercase tracking-widest px-4">
+                  Confirming cancellation for order #{String(cancellingOrder.id).slice(0, 8)}. This action is logged.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-[10px] font-mono font-black uppercase tracking-widest text-ink/30 text-left block ml-4">Reason for cancellation</label>
+                <textarea 
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  placeholder="e.g., Inventory mismatch, double order..."
+                  className="w-full px-6 py-4 bg-background border border-ink/5 rounded-2xl text-xs font-medium focus:ring-4 focus:ring-danger/5 transition-all outline-none resize-none h-24"
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setCancellingOrder(null)}
+                  className="flex-1 py-5 bg-background text-ink/40 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-ink hover:text-white transition-all active:scale-95"
+                >
+                  Keep active
+                </button>
+                <button 
+                  onClick={handleCancelSubmit}
+                  disabled={isSubmitting}
+                  className="flex-1 py-5 bg-danger text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-danger/30 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {isSubmitting ? <ArrowUpDown className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
+                  Confirm Cancel
                 </button>
               </div>
             </div>

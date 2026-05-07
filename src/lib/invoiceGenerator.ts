@@ -14,6 +14,15 @@ interface Order {
   branch_id: string;
   items: OrderItem[];
   notes?: string;
+  user_id?: string;
+  processed_by?: string;
+  received_by?: string;
+}
+
+interface Profile {
+  id: string;
+  email: string;
+  role: string;
 }
 
 interface Product {
@@ -29,8 +38,12 @@ interface Branch {
   location?: string;
 }
 
-export const generateInvoicePDF = (order: Order, branch: Branch | undefined, products: Product[]) => {
+export const generateInvoicePDF = (order: Order, branch: Branch | undefined, products: Product[], profiles: Profile[] = []) => {
   const doc = new jsPDF() as any;
+
+  const initiator = profiles.find(p => p.id === order.user_id);
+  const processor = profiles.find(p => p.id === order.processed_by);
+  const receiver = profiles.find(p => p.id === order.received_by);
 
   // Header
   doc.setFillColor(30, 30, 30);
@@ -124,21 +137,44 @@ export const generateInvoicePDF = (order: Order, branch: Branch | undefined, pro
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 30, 30);
-  doc.text('SECURITY CHECK', 20, currentY);
+  doc.text('AUTHORIZATION & LOGISTICS', 20, currentY);
+  currentY += 10;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  
+  // Row 1: labels
+  doc.text('INITIATOR (Branch)', 20, currentY);
+  doc.text('PROCESSOR (Warehouse)', 85, currentY);
+  doc.text('RECEIVER (Branch)', 150, currentY);
+  currentY += 6;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 100, 100);
+  
+  // Row 2: names
+  doc.text(initiator?.email || 'UNASSIGNED', 20, currentY);
+  doc.text(processor?.email || 'UNPROCESSED', 85, currentY);
+  doc.text(receiver?.email || 'UNRECEIVED', 150, currentY);
   currentY += 12;
+
+  doc.setTextColor(30, 30, 30);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SECURITY SIGN-OFF', 20, currentY);
+  currentY += 10;
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   
   // Three columns for the security check
   doc.text('Full Name:', 20, currentY);
-  doc.line(40, currentY + 1, 90, currentY + 1); // Line for Name
+  doc.line(40, currentY + 1, 80, currentY + 1); 
 
-  doc.text('Signature:', 100, currentY);
-  doc.line(120, currentY + 1, 155, currentY + 1); // Line for Signature
+  doc.text('Signature:', 90, currentY);
+  doc.line(110, currentY + 1, 150, currentY + 1); 
 
-  doc.text('Date:', 165, currentY);
-  doc.line(175, currentY + 1, 190, currentY + 1); // Line for Date
+  doc.text('Date:', 160, currentY);
+  doc.line(170, currentY + 1, 190, currentY + 1); 
 
   // Footer
   doc.setFontSize(8);
