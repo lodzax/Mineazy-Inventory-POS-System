@@ -244,7 +244,7 @@ export function useInventory() {
 
       setData({
         branches: bData || [],
-        products: pData || [],
+        products: (pData || []).map((p: any) => ({ ...p, category: p.category || 'General' })),
         inventory: (iData || []).map((i: any) => ({ 
           ...i, 
           stock: Number(i.stock),
@@ -373,13 +373,13 @@ export function useInventory() {
     }
   };
 
-  const addProduct = async (name: string, unit: string, price: number, costPrice: number = 0, category: string = 'General') => {
+  const addProduct = async (name: string, unit: string, price: number, costPrice: number = 0) => {
     if (!user) return;
     const id = name.toLowerCase().replace(/\s+/g, '-');
     try {
       const { error } = await supabase
         .from('products')
-        .insert({ id, name, unit, price, cost_price: costPrice, category });
+        .insert({ id, name, unit, price, cost_price: costPrice });
       if (error) throw error;
       await fetchData();
     } catch (err) {

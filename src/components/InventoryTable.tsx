@@ -30,7 +30,6 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
     }
   }, [profile, isLimited, branches, selectedBranch]);
 
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [stockLevelFilter, setStockLevelFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [manualUpdate, setManualUpdate] = useState<{ branchId: string, productId: string, type: 'add' | 'remove' } | null>(null);
@@ -43,16 +42,14 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
   const [thresholdAmount, setThresholdAmount] = useState<string>('');
 
   const filteredProducts = products.filter(p => {
-    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter;
-    
     // Improved search: split into terms and match all terms
     const searchTerms = search.toLowerCase().trim().split(/\s+/);
     const matchesSearch = searchTerms.every(term => 
       p.name.toLowerCase().includes(term) || 
-      p.category?.toLowerCase().includes(term)
+      (p.category && p.category.toLowerCase().includes(term))
     );
     
-    return matchesCategory && (search === '' || matchesSearch);
+    return search === '' || matchesSearch;
   });
 
   const filteredBranches = branches.filter(b => {
@@ -99,8 +96,6 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
       setIsConverting(null);
     }
   };
-
-  const categories = Array.from(new Set(products.map(p => p.category))).filter(Boolean);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -401,20 +396,6 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
               <option value="critical">Depleted (0)</option>
               <option value="low">Low Stock (≤ Threshold)</option>
               <option value="in-stock">In-Stock (&gt; Threshold)</option>
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
-            <span className="text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Category</span>
-            <select 
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full px-6 py-3.5 bg-white border border-ink/5 rounded-2xl font-sans text-xs font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01]"
-            >
-              <option value="all">All Categories</option>
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
             </select>
           </div>
         </div>
