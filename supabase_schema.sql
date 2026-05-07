@@ -84,13 +84,11 @@ CREATE TABLE IF NOT EXISTS orders (
   id BIGSERIAL PRIMARY KEY,
   branch_id TEXT REFERENCES branches(id) NOT NULL,
   items JSONB NOT NULL, -- Array of { productId, quantity, suppliedQuantity }
-  status TEXT CHECK (status IN ('Pending', 'Processed', 'Dispatched', 'Received', 'Cancelled')) DEFAULT 'Pending',
+  status TEXT CHECK (status IN ('Pending', 'In-Transit', 'Received', 'Cancelled')) DEFAULT 'Pending',
   notes TEXT,
   user_id UUID REFERENCES profiles(id) NOT NULL, -- The person who initiated the request
   processed_at TIMESTAMPTZ,
   processed_by UUID REFERENCES profiles(id),
-  dispatched_at TIMESTAMPTZ,
-  dispatched_by UUID REFERENCES profiles(id),
   received_at TIMESTAMPTZ,
   received_by UUID REFERENCES profiles(id),
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -103,17 +101,6 @@ CREATE TABLE IF NOT EXISTS notifications (
   title TEXT NOT NULL,
   message TEXT NOT NULL,
   read BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 8. Transfers Table
-CREATE TABLE IF NOT EXISTS transfers (
-  id BIGSERIAL PRIMARY KEY,
-  from_branch_id TEXT REFERENCES branches(id),
-  to_branch_id TEXT REFERENCES branches(id),
-  items JSONB NOT NULL, -- Array of { productId, quantity }
-  notes TEXT,
-  user_id UUID REFERENCES profiles(id),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -138,9 +125,6 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'orders') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE orders;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'transfers') THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE transfers;
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notifications') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
   END IF;
@@ -154,7 +138,6 @@ ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transfers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to fix recursion in RLS
@@ -164,50 +147,43 @@ RETURNS text AS $$
 $$ LANGUAGE sql SECURITY DEFINER;
 
 -- Profiles Policies
-DROP POLICY IF EXISTS "Users can view their own profile" ON profiles;
-CREATE POLICY "Users can view their own profile" ON profiles FOR SELECT USING (auth.uid() = id);
-
-DROP POLICY IF EXISTS "Admins/Managers can view all profiles" ON profiles;
-CREATE POLICY "Admins/Managers can view all profiles" ON profiles FOR SELECT TO authenticated USING (
-  get_my_role() IN ('Administrator', 'Manager')
-);
+DROP POLICY IF EXISTS "Allow all authenticated users to view profiles" ON profiles;
+CREATE POLICY "Allow all authenticated users to view profiles" ON profiles FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
-CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
 DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
-CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
 
 -- Notifications Policies
 DROP POLICY IF EXISTS "Users can view their own notifications" ON notifications;
-CREATE POLICY "Users can view their own notifications" ON notifications FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can view their own notifications" ON notifications FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
 DROP POLICY IF EXISTS "System can insert notifications" ON notifications;
-CREATE POLICY "System can insert notifications" ON notifications FOR INSERT WITH CHECK (true);
+CREATE POLICY "System can insert notifications" ON notifications FOR INSERT TO authenticated WITH CHECK (true);
 
 -- Other Policies
 DROP POLICY IF EXISTS "Allow public read for branches" ON branches;
 CREATE POLICY "Allow public read for branches" ON branches FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON branches;
-CREATE POLICY "Allow all for authenticated users" ON branches FOR ALL TO authenticated USING (true);
+CREATE POLICY "Allow all for authenticated users" ON branches FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON products;
-CREATE POLICY "Allow all for authenticated users" ON products FOR ALL TO authenticated USING (true);
+CREATE POLICY "Allow all for authenticated users" ON products FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON inventory;
-CREATE POLICY "Allow all for authenticated users" ON inventory FOR ALL TO authenticated USING (true);
+CREATE POLICY "Allow all for authenticated users" ON inventory FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON transactions;
-CREATE POLICY "Allow all for authenticated users" ON transactions FOR ALL TO authenticated USING (true);
+CREATE POLICY "Allow all for authenticated users" ON transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON sales;
-CREATE POLICY "Allow all for authenticated users" ON sales FOR ALL TO authenticated USING (true);
+CREATE POLICY "Allow all for authenticated users" ON sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON orders;
-CREATE POLICY "Allow all for authenticated users" ON orders FOR ALL TO authenticated USING (true);
-
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON transfers;
-CREATE POLICY "Allow all for authenticated users" ON transfers FOR ALL TO authenticated USING (true);
+CREATE POLICY "Allow all for authenticated users" ON orders FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- Trigger to create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()

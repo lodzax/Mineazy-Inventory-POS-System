@@ -41,8 +41,6 @@ import Scanner from './components/Scanner';
 import OrdersHistoryTable from './components/OrdersHistoryTable';
 import POSView from './components/POSView';
 import SalesHistoryTable from './components/SalesHistoryTable';
-import TransferView from './components/TransferView';
-import TransferHistoryTable from './components/TransferHistoryTable';
 import BranchesView from './components/BranchesView';
 
 const branches = [
@@ -60,7 +58,7 @@ const products = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders_history' | 'pos' | 'sales_history' | 'transfers' | 'transfers_history' | 'branches'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders_history' | 'pos' | 'sales_history' | 'branches'>('dashboard');
   const [showScanner, setShowScanner] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -79,17 +77,15 @@ export default function App() {
     transactions, 
     orders, 
     sales,
-    transfers,
     updateStocks, 
     addProduct, 
     initiateOrder,
-    fulfillOrder,
-    dispatchOrder,
+    processOrder,
     cancelOrder,
     confirmReceipt,
     processSale,
-    transferStock,
     updateProduct,
+    convertMercury,
     addBranch,
     updateBranch,
     deleteBranch,
@@ -150,7 +146,7 @@ export default function App() {
             id: authData.user.id,
             email,
             role: registrationRole,
-            branch_id: (registrationRole === 'Supervisor' || registrationRole === 'Cashier') ? (registrationBranch || null) : null
+            branch_id: (registrationRole === 'Supervisor' || registrationRole === 'Cashier') ? (registrationBranch?.toLowerCase() || null) : null
           });
           if (profileError) {
             console.error("Profile update failed", profileError);
@@ -447,24 +443,6 @@ export default function App() {
           )}
           {(profile?.role !== 'Cashier') && (
             <NavItem 
-              active={activeTab === 'transfers'} 
-              onClick={() => setActiveTab('transfers')} 
-              icon={<ArrowRightLeft className="w-5 h-5" />} 
-              label="Stock Transfers" 
-              collapsed={isSidebarCollapsed}
-            />
-          )}
-          {(profile?.role !== 'Cashier') && (
-            <NavItem 
-              active={activeTab === 'transfers_history'} 
-              onClick={() => setActiveTab('transfers_history')} 
-              icon={<PackageCheck className="w-5 h-5" />} 
-              label="Transfer History" 
-              collapsed={isSidebarCollapsed}
-            />
-          )}
-          {(profile?.role !== 'Cashier') && (
-            <NavItem 
               active={activeTab === 'orders_history'} 
               onClick={() => setActiveTab('orders_history')} 
               icon={<PackageCheck className="w-5 h-5" />} 
@@ -589,22 +567,6 @@ export default function App() {
                 )}
                 {(profile?.role !== 'Cashier') && (
                   <NavItem 
-                    active={activeTab === 'transfers'} 
-                    onClick={() => { setActiveTab('transfers'); setIsSidebarOpen(false); }} 
-                    icon={<ArrowRightLeft className="w-5 h-5" />} 
-                    label="Transfers" 
-                  />
-                )}
-                {(profile?.role !== 'Cashier') && (
-                  <NavItem 
-                    active={activeTab === 'transfers_history'} 
-                    onClick={() => { setActiveTab('transfers_history'); setIsSidebarOpen(false); }} 
-                    icon={<PackageCheck className="w-5 h-5" />} 
-                    label="Transfer Logs" 
-                  />
-                )}
-                {(profile?.role !== 'Cashier') && (
-                  <NavItem 
                     active={activeTab === 'orders_history'} 
                     onClick={() => { setActiveTab('orders_history'); setIsSidebarOpen(false); }} 
                     icon={<PackageCheck className="w-5 h-5" />} 
@@ -647,8 +609,6 @@ export default function App() {
                activeTab === 'inventory' ? 'Inventory Grid' : 
                activeTab === 'pos' ? 'Direct checkout' :
                activeTab === 'sales_history' ? 'Transaction archive' :
-               activeTab === 'transfers' ? 'Stock Relocation' :
-               activeTab === 'transfers_history' ? 'Movement Archive' :
                activeTab === 'branches' ? 'Network Hub' :
                activeTab === 'orders_history' ? 'Order Archive' : 'System Logs'}
             </h2>
@@ -657,8 +617,6 @@ export default function App() {
                activeTab === 'inventory' ? 'Fine-grained control over global product quantities' : 
                activeTab === 'pos' ? 'Front-facing sales interface with instant receipt generation' :
                activeTab === 'sales_history' ? 'Audited log of every point-of-sale transaction' :
-               activeTab === 'transfers' ? 'Internal logistics and resource rebalancing' :
-               activeTab === 'transfers_history' ? 'Verification trail for all branch movements' :
                activeTab === 'branches' ? 'Command center for all operational locations' :
                activeTab === 'orders_history' ? 'Retrospective on fulfillment and warehouse demand' : 'Raw event logs for security and auditing'}
             </p>
@@ -830,7 +788,6 @@ export default function App() {
                   orders={orders} 
                   transactions={transactions}
                   sales={sales}
-                  transfers={transfers}
                 />
               )}
               {activeTab === 'inventory' && (
@@ -841,6 +798,7 @@ export default function App() {
                   onUpdate={(bid, pid, amt, type, notes = '') => updateStocks(bid, pid, amt, type, notes)}
                   updateProduct={updateProduct}
                   updateThreshold={updateThreshold}
+                  convertMercury={convertMercury}
                   profile={profile}
                 />
               )}
@@ -864,30 +822,13 @@ export default function App() {
                   products={dbProducts}
                 />
               )}
-              {activeTab === 'transfers' && (
-                <TransferView 
-                  branches={dbBranches}
-                  products={dbProducts}
-                  inventory={inventory}
-                  transferStock={transferStock}
-                  profile={profile}
-                />
-              )}
-              {activeTab === 'transfers_history' && (
-                <TransferHistoryTable 
-                  transfers={transfers}
-                  branches={dbBranches}
-                  products={dbProducts}
-                />
-              )}
               {activeTab === 'orders_history' && (
                 <OrdersHistoryTable 
                   orders={orders}
                   branches={dbBranches}
                   products={dbProducts}
                   initiateOrder={initiateOrder}
-                  fulfillOrder={fulfillOrder}
-                  dispatchOrder={dispatchOrder}
+                  processOrder={processOrder}
                   cancelOrder={cancelOrder}
                   confirmReceipt={confirmReceipt}
                   profile={profile}
@@ -974,6 +915,7 @@ function HistoryTable({ transactions, branches, products }: { transactions: any[
                 <th className="px-8 py-6">Operation</th>
                 <th className="px-8 py-6">Node</th>
                 <th className="px-8 py-6">Resource</th>
+                <th className="px-8 py-6">Notes</th>
                 <th className="px-8 py-6 text-right">Magnitude</th>
               </tr>
             </thead>
@@ -1007,6 +949,11 @@ function HistoryTable({ transactions, branches, products }: { transactions: any[
                       </div>
                     </td>
                     <td className="px-8 py-5 text-ink/70 text-xs font-medium">{product?.name || tx.product_id}</td>
+                    <td className="px-8 py-5">
+                      <p className="text-[10px] text-ink/50 max-w-xs truncate font-medium italic" title={tx.notes}>
+                        {tx.notes || '-'}
+                      </p>
+                    </td>
                     <td className={`px-8 py-5 text-right font-mono font-bold text-base tracking-tighter ${
                       tx.type === 'add' ? 'text-accent' : 'text-danger'
                     }`}>

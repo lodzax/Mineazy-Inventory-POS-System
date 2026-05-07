@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Minus, Search, ChevronDown, ChevronUp, Edit3, QrCode } from 'lucide-react';
+import { Plus, Minus, Search, ChevronDown, ChevronUp, Edit3, QrCode, ArrowRightLeft } from 'lucide-react';
 import QRCodeModal from './QRCodeModal';
 
 interface InventoryTableProps {
@@ -11,12 +11,25 @@ interface InventoryTableProps {
   onUpdate: (branchId: string, productId: string, amount: number, type: 'add' | 'remove', notes: string) => void;
   updateProduct: (id: string, updates: { price?: number, cost_price?: number, unit?: string, name?: string }) => void;
   updateThreshold: (branchId: string, productId: string, threshold: number) => void;
+  convertMercury: (branchId: string) => Promise<boolean>;
   profile: any;
 }
 
-export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, updateThreshold, profile }: InventoryTableProps) {
+export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, updateThreshold, convertMercury, profile }: InventoryTableProps) {
   const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
-  const [selectedBranch, setSelectedBranch] = useState<string>(isLimited ? (profile?.branch_id || branches[0]?.id) : 'all');
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+  // Sync selected branch for limited roles
+  React.useEffect(() => {
+    if (isLimited && profile?.branch_id) {
+      setSelectedBranch(profile.branch_id.toLowerCase());
+    } else if (!isLimited && !selectedBranch) {
+      setSelectedBranch('all');
+    } else if (isLimited && !profile?.branch_id && branches.length > 0 && !selectedBranch) {
+      setSelectedBranch(branches[0].id);
+    }
+  }, [profile, isLimited, branches, selectedBranch]);
+
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [stockLevelFilter, setStockLevelFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -72,6 +85,20 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
 
     return matchesBranchSelection && matchesStock && (search === '' || branchNameMatches || productMatchesSearch);
   });
+
+  const [isConverting, setIsConverting] = useState<string | null>(null);
+
+  const handleConvert = async (branchId: string) => {
+    setIsConverting(branchId);
+    try {
+      const success = await convertMercury(branchId);
+      if (success) {
+        alert("Mercury conversion completed successfully. 1kg -> 33x30g recorded.");
+      }
+    } finally {
+      setIsConverting(null);
+    }
+  };
 
   const categories = Array.from(new Set(products.map(p => p.category))).filter(Boolean);
 
@@ -488,46 +515,69 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                             </div>
                           </div>
                           
-                          <div className="flex gap-2">
-                            <div className="flex flex-col gap-2">
-                               <button 
-                                onClick={() => onUpdate(branch.id, product.id, 1, 'add', 'Fast Increment')}
-                                className="p-2.5 bg-accent/10 hover:bg-accent text-accent hover:text-white rounded-xl transition-all active:scale-90"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                               <button 
-                                onClick={() => onUpdate(branch.id, product.id, 1, 'remove', 'Fast Decrement')}
-                                className="p-2.5 bg-danger/10 hover:bg-danger text-danger hover:text-white rounded-xl transition-all active:scale-90"
-                              >
-                                <Minus className="w-4 h-4" />
-                              </button>
-                            </div>
-                            
-                            <div className="flex flex-col gap-2">
-                               <button 
-                                onClick={() => setManualUpdate({ branchId: branch.id, productId: product.id, type: 'add' })}
-                                className="p-2.5 border-2 border-accent/20 hover:bg-accent/5 text-accent rounded-xl transition-all active:scale-90"
-                                title="Precise Add"
-                              >
-                                <Edit3 className="w-4 h-4 transform rotate-180" />
-                              </button>
+                          <div className="flex flex-col gap-3">
+                            <div className="flex gap-2">
+                              <div className="flex flex-col gap-2">
+                                <button 
+                                  onClick={() => onUpdate(branch.id, product.id, 1, 'add', 'Fast Increment')}
+                                  className="p-2.5 bg-accent/10 hover:bg-accent text-accent hover:text-white rounded-xl transition-all active:scale-90"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                                <button 
+                                  onClick={() => onUpdate(branch.id, product.id, 1, 'remove', 'Fast Decrement')}
+                                  className="p-2.5 bg-danger/10 hover:bg-danger text-danger hover:text-white rounded-xl transition-all active:scale-90"
+                                >
+                                  <Minus className="w-4 h-4" />
+                                </button>
+                              </div>
+                              
+                              <div className="flex flex-col gap-2">
+                                <button 
+                                  onClick={() => setManualUpdate({ branchId: branch.id, productId: product.id, type: 'add' })}
+                                  className="p-2.5 border-2 border-accent/20 hover:bg-accent/5 text-accent rounded-xl transition-all active:scale-90"
+                                  title="Precise Add"
+                                >
+                                  <Edit3 className="w-4 h-4 transform rotate-180" />
+                                </button>
+                                <button 
+                                  onClick={() => setManualUpdate({ branchId: branch.id, productId: product.id, type: 'remove' })}
+                                  className="p-2.5 border-2 border-danger/20 hover:bg-danger/5 text-danger rounded-xl transition-all active:scale-90"
+                                  title="Precise Remove"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                              </div>
+
                               <button 
-                                onClick={() => setManualUpdate({ branchId: branch.id, productId: product.id, type: 'remove' })}
-                                className="p-2.5 border-2 border-danger/20 hover:bg-danger/5 text-danger rounded-xl transition-all active:scale-90"
-                                title="Precise Remove"
+                                onClick={() => setQrModal({ branchId: branch.id, productId: product.id })}
+                                className="px-3 bg-ink text-white rounded-xl hover:bg-primary transition-all active:scale-90 flex flex-col items-center justify-center gap-1 group/qr"
                               >
-                                <Edit3 className="w-4 h-4" />
+                                <QrCode className="w-5 h-5" />
+                                <span className="text-[8px] font-mono uppercase font-black">QR</span>
                               </button>
                             </div>
 
-                            <button 
-                              onClick={() => setQrModal({ branchId: branch.id, productId: product.id })}
-                              className="px-3 bg-ink text-white rounded-xl hover:bg-primary transition-all active:scale-90 flex flex-col items-center justify-center gap-1 group/qr"
-                            >
-                              <QrCode className="w-5 h-5" />
-                              <span className="text-[8px] font-mono uppercase font-black">QR</span>
-                            </button>
+                            {/* Mercury Conversion Shortcut */}
+                            {product.id === '30g-mercury' && (profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
+                              <button
+                                onClick={() => {
+                                  const kgInv = inventory.find(i => i.branch_id === branch.id && i.product_id === '1kg-mercury');
+                                  if (!kgInv || Number(kgInv.stock) < 1) {
+                                    alert("Cannot convert: No 1kg Mercury units available in this branch.");
+                                    return;
+                                  }
+                                  if (confirm("Confirm Conversion: Convert 1kg unit of Mercury into 33 units of 30g?")) {
+                                    handleConvert(branch.id);
+                                  }
+                                }}
+                                disabled={isConverting === branch.id}
+                                className={`w-full py-2.5 ${isCritical || isLow ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary/20 text-primary hover:bg-primary/30'} text-white rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 overflow-hidden`}
+                              >
+                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                                {isConverting === branch.id ? 'Processing...' : 'Convert 1kg -> 33 units'}
+                              </button>
+                            )}
                           </div>
                         </div>
                       </td>

@@ -25,7 +25,6 @@ interface DashboardProps {
   orders: any[];
   transactions: any[];
   sales: any[];
-  transfers: any[];
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -58,7 +57,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export default function Dashboard({ inventory, branches, products, orders, transactions, sales, transfers }: DashboardProps) {
+export default function Dashboard({ inventory, branches, products, orders, transactions, sales }: DashboardProps) {
   const [activeSeries, setActiveSeries] = React.useState<string[]>([]);
   const [isMounted, setIsMounted] = React.useState(false);
 
@@ -138,14 +137,13 @@ export default function Dashboard({ inventory, branches, products, orders, trans
   // Sales Metrics
   const totalRevenue = React.useMemo(() => (sales || []).reduce((sum, s) => sum + (s.total || 0), 0), [sales]);
   const salesCount = sales?.length || 0;
-  const transferCount = transfers?.length || 0;
 
   const COLORS = ['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#F43F5E', '#8B5CF6', '#EC4899'];
 
   return (
     <div className="space-y-10">
       {/* Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-5">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -245,23 +243,6 @@ export default function Dashboard({ inventory, branches, products, orders, trans
             <div>
               <p className="text-[10px] font-mono uppercase text-ink/40 font-bold tracking-widest">Revenue</p>
               <h3 className="text-3xl font-mono font-bold text-ink tracking-tighter">${totalRevenue.toFixed(0)}</h3>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="bg-ink p-6 rounded-[2rem] border border-white/5 shadow-xl shadow-ink/20 text-white"
-        >
-          <div className="flex flex-col gap-4">
-            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-primary">
-              <ArrowRightLeft className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-[10px] font-mono uppercase text-white/40 font-bold tracking-widest">Transfers</p>
-              <h3 className="text-3xl font-mono font-bold text-white tracking-tighter">{transferCount}</h3>
             </div>
           </div>
         </motion.div>

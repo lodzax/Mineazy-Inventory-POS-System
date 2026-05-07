@@ -7,8 +7,7 @@ interface OrdersHistoryTableProps {
   branches: any[];
   products: any[];
   initiateOrder: (branchId: string, items: any[], notes: string) => Promise<void>;
-  fulfillOrder: (orderId: string | number, items: any[], notes: string) => void;
-  dispatchOrder: (orderId: string | number) => void;
+  processOrder: (orderId: string | number, items: any[], notes: string) => void;
   cancelOrder: (orderId: string | number) => void;
   confirmReceipt: (orderId: string | number) => void;
   profile: any;
@@ -19,20 +18,29 @@ export default function OrdersHistoryTable({
   branches, 
   products, 
   initiateOrder,
-  fulfillOrder, 
-  dispatchOrder, 
+  processOrder, 
   cancelOrder, 
   confirmReceipt, 
   profile 
 }: OrdersHistoryTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [fulfillingOrder, setFulfillingOrder] = useState<any | null>(null);
-  const [fulfillmentItems, setFulfillmentItems] = useState<any[]>([]);
+  const [processingOrder, setProcessingOrder] = useState<any | null>(null);
+  const [processingItems, setProcessingItems] = useState<any[]>([]);
   const [fNotes, setFNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showInitiateModal, setShowInitiateModal] = useState(false);
-  const [newOrderBranch, setNewOrderBranch] = useState(profile?.branch_id || '');
+  const [newOrderBranch, setNewOrderBranch] = useState<string>('');
+
+  // Sync branch for limited roles
+  React.useEffect(() => {
+    if (profile?.branch_id) {
+      setNewOrderBranch(profile.branch_id.toLowerCase());
+    } else if (branches.length > 0 && !newOrderBranch) {
+      setNewOrderBranch(branches[0].id);
+    }
+  }, [profile, branches, newOrderBranch]);
+
   const [newOrderItems, setNewOrderItems] = useState<{ productId: string, quantity: number }[]>([]);
   const [newOrderNotes, setNewOrderNotes] = useState('');
 
@@ -53,22 +61,22 @@ export default function OrdersHistoryTable({
 
   const sortedOrders = [...filteredOrders].sort((a, b) => (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0));
 
-  const openFulfillment = (order: any) => {
-    setFulfillingOrder(order);
-    setFulfillmentItems(order.items.map((item: any) => ({
+  const openProcessing = (order: any) => {
+    setProcessingOrder(order);
+    setProcessingItems(order.items.map((item: any) => ({
       ...item,
       suppliedQuantity: item.suppliedQuantity ?? item.quantity
     })));
     setFNotes(order.notes || '');
   };
 
-  const handleFulfillSubmit = async (e: React.FormEvent) => {
+  const handleProcessSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fulfillingOrder) return;
+    if (!processingOrder) return;
     setIsSubmitting(true);
     try {
-      await fulfillOrder(fulfillingOrder.id, fulfillmentItems, fNotes);
-      setFulfillingOrder(null);
+      await processOrder(processingOrder.id, processingItems, fNotes);
+      setProcessingOrder(null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -77,9 +85,9 @@ export default function OrdersHistoryTable({
   };
 
   const updateItemSupply = (idx: number, val: string) => {
-    const newItems = [...fulfillmentItems];
+    const newItems = [...processingItems];
     newItems[idx].suppliedQuantity = val === '' ? 0 : parseFloat(val);
-    setFulfillmentItems(newItems);
+    setProcessingItems(newItems);
   };
 
   const handleInitiateSubmit = async (e: React.FormEvent) => {
@@ -135,8 +143,7 @@ export default function OrdersHistoryTable({
           >
             <option value="all">ALL PROTOCOLS</option>
             <option value="Pending">PENDING</option>
-            <option value="Processed">PROCESSED</option>
-            <option value="Dispatched">DISPATCHED</option>
+            <option value="In-Transit">IN-TRANSIT</option>
             <option value="Received">RECEIVED</option>
             <option value="Cancelled">CANCELLED</option>
           </select>
@@ -206,8 +213,7 @@ export default function OrdersHistoryTable({
                     <td className="px-10 py-6">
                       <span className={`px-4 py-1.5 rounded-full text-[9px] font-mono font-black uppercase tracking-widest shadow-sm ${
                         order.status === 'Pending' ? 'bg-warning/10 text-warning' :
-                        order.status === 'Processed' ? 'bg-primary/10 text-primary' :
-                        order.status === 'Dispatched' ? 'bg-secondary/10 text-secondary' :
+                        order.status === 'In-Transit' ? 'bg-secondary/10 text-secondary' :
                         order.status === 'Received' ? 'bg-accent/10 text-accent' :
                         'bg-danger/10 text-danger'
                       }`}>
@@ -218,23 +224,14 @@ export default function OrdersHistoryTable({
                       <div className="flex items-center justify-end gap-2">
                         {isWarehouse && order.status === 'Pending' && (
                           <button 
-                            onClick={() => openFulfillment(order)}
+                            onClick={() => openProcessing(order)}
                             className="p-3 bg-primary text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95"
-                            title="Fulfill Order"
+                            title="Acknowledge & Process"
                           >
                             <PackageCheck className="w-4 h-4" />
                           </button>
                         )}
-                        {isWarehouse && order.status === 'Processed' && (
-                          <button 
-                            onClick={() => dispatchOrder(order.id)}
-                            className="p-3 bg-secondary text-white rounded-xl hover:shadow-lg hover:shadow-secondary/30 transition-all active:scale-95"
-                            title="Dispatch Order"
-                          >
-                            <Truck className="w-4 h-4" />
-                          </button>
-                        )}
-                        {!isWarehouse && order.status === 'Dispatched' && (
+                        {!isWarehouse && order.status === 'In-Transit' && (
                           <button 
                             onClick={() => confirmReceipt(order.id)}
                             className="p-3 bg-accent text-white rounded-xl hover:shadow-lg hover:shadow-accent/30 transition-all active:scale-95"
@@ -272,14 +269,14 @@ export default function OrdersHistoryTable({
         </div>
       </div>
 
-      {/* Fulfillment Modal */}
-      {fulfillingOrder && (
+      {/* Processing Modal */}
+      {processingOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setFulfillingOrder(null)}
+            onClick={() => setProcessingOrder(null)}
             className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
           />
           <motion.div 
@@ -290,16 +287,16 @@ export default function OrdersHistoryTable({
             <div className="p-12 space-y-8">
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-4xl font-serif font-medium text-ink italic">Fulfillment protocol</h3>
-                  <p className="text-[10px] font-mono text-primary font-bold uppercase tracking-widest mt-1">Adjusting supply magnitudes for #{String(fulfillingOrder.id).slice(0, 8)}</p>
+                  <h3 className="text-4xl font-serif font-medium text-ink italic">Acknowledge & Process</h3>
+                  <p className="text-[10px] font-mono text-primary font-bold uppercase tracking-widest mt-1">Adjusting supply magnitudes for #{String(processingOrder.id).slice(0, 8)}</p>
                 </div>
-                <button onClick={() => setFulfillingOrder(null)} className="p-3 bg-background hover:bg-ink hover:text-white rounded-full transition-all active:scale-90">
+                <button onClick={() => setProcessingOrder(null)} className="p-3 bg-background hover:bg-ink hover:text-white rounded-full transition-all active:scale-90">
                   <X className="w-6 h-6" />
                 </button>
               </div>
 
               <div className="max-h-[40vh] overflow-y-auto pr-4 custom-scrollbar space-y-4">
-                {fulfillmentItems.map((item, idx) => {
+                {processingItems.map((item, idx) => {
                   const product = products.find(p => p.id === item.productId);
                   return (
                     <div key={idx} className="p-6 bg-background rounded-2xl border border-ink/5 flex items-center justify-between gap-6">
@@ -339,18 +336,18 @@ export default function OrdersHistoryTable({
 
               <div className="pt-4 flex gap-4">
                 <button 
-                  onClick={() => setFulfillingOrder(null)}
+                  onClick={() => setProcessingOrder(null)}
                   className="flex-1 py-5 bg-background text-ink/40 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-ink hover:text-white transition-all active:scale-95"
                 >
                   Suspend protocol
                 </button>
                 <button 
-                  onClick={handleFulfillSubmit}
+                  onClick={handleProcessSubmit}
                   disabled={isSubmitting}
                   className="flex-1 py-5 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:translate-y-[-1px] hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-primary/20"
                 >
                   {isSubmitting ? <ArrowUpDown className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
-                  {isSubmitting ? 'Processing...' : 'Complete fulfillment'}
+                  {isSubmitting ? 'Processing...' : 'Acknowledge & Ship'}
                 </button>
               </div>
             </div>

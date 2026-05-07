@@ -32,8 +32,19 @@ interface POSViewProps {
 }
 
 export default function POSView({ products, branches, inventory, processSale, user, profile }: POSViewProps) {
-  const [selectedBranch, setSelectedBranch] = useState(profile?.branch_id || branches[0]?.id || '');
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [search, setSearch] = useState('');
+  
+  // Sync selected branch when profile or branches load
+  React.useEffect(() => {
+    if (profile?.branch_id) {
+      setSelectedBranch(profile.branch_id.toLowerCase());
+    } else if (branches.length > 0 && !selectedBranch) {
+      // For non-limited roles or if profile lacks branch_id, default to first branch
+      setSelectedBranch(branches[0].id);
+    }
+  }, [profile, branches, selectedBranch]);
+
   const [cart, setCart] = useState<{ productId: string, quantity: number, price: number }[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -96,7 +107,7 @@ export default function POSView({ products, branches, inventory, processSale, us
     doc.setFontSize(22);
     doc.setTextColor(15, 23, 42); // #0F172A (ink color)
     doc.setFont("helvetica", "bold");
-    doc.text("MINEAZY RECEIPT", 105, 20, { align: "center" });
+    doc.text(`${branch.toUpperCase()} RECEIPT`, 105, 20, { align: "center" });
     
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
