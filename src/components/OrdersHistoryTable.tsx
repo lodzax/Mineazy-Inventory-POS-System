@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Search, Filter, ArrowUpDown, PackageCheck, Truck, X, Plus, Trash2, Send, Printer } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, PackageCheck, Truck, X, Plus, Trash2, Send, Printer, FileText } from 'lucide-react';
+import { generateInvoicePDF } from '../lib/invoiceGenerator';
 
 interface OrdersHistoryTableProps {
   orders: any[];
   branches: any[];
   products: any[];
-  initiateOrder: (branchId: string, items: any[], notes: string) => Promise<void>;
+  initiateOrder: (branchId: string, items: any[], notes: string) => Promise<any>;
   processOrder: (orderId: string | number, items: any[], notes: string) => void;
   cancelOrder: (orderId: string | number) => void;
   confirmReceipt: (orderId: string | number) => void;
@@ -75,7 +76,8 @@ export default function OrdersHistoryTable({
     if (!processingOrder) return;
     setIsSubmitting(true);
     try {
-      await processOrder(processingOrder.id, processingItems, fNotes);
+      const cleanedItems = processingItems.map(({ isNew, ...rest }) => rest);
+      await processOrder(processingOrder.id, cleanedItems, fNotes);
       setProcessingOrder(null);
     } catch (err) {
       console.error(err);
@@ -90,12 +92,37 @@ export default function OrdersHistoryTable({
     setProcessingItems(newItems);
   };
 
+  const addItemToProcessing = () => {
+    if (!products.length) return;
+    setProcessingItems([...processingItems, { 
+      productId: products[0].id, 
+      quantity: 0, 
+      suppliedQuantity: 1, 
+      isNew: true 
+    }]);
+  };
+
+  const removeItemFromProcessing = (idx: number) => {
+    setProcessingItems(processingItems.filter((_, i) => i !== idx));
+  };
+
+  const updateProcessingItemProduct = (idx: number, productId: string) => {
+    const newItems = [...processingItems];
+    newItems[idx].productId = productId;
+    setProcessingItems(newItems);
+  };
+
   const handleInitiateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newOrderBranch || newOrderItems.length === 0) return;
     setIsSubmitting(true);
     try {
-      await initiateOrder(newOrderBranch, newOrderItems, newOrderNotes);
+      const order = await initiateOrder(newOrderBranch, newOrderItems, newOrderNotes);
+      if (order && isWarehouse) {
+        // Auto-generate invoice for warehouse users
+        const branch = branches.find(b => b.id === newOrderBranch);
+        generateInvoicePDF(order, branch, products);
+      }
       setShowInitiateModal(false);
       setNewOrderItems([]);
       setNewOrderNotes('');
@@ -157,15 +184,13 @@ export default function OrdersHistoryTable({
           <span>Print Audit</span>
         </button>
 
-        {!isWarehouse && (
-          <button 
-            onClick={() => setShowInitiateModal(true)}
-            className="px-8 py-5 bg-ink text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Initiate Requisition</span>
-          </button>
-        )}
+        <button 
+          onClick={() => setShowInitiateModal(true)}
+          className="px-8 py-5 bg-ink text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Initiate Requisition</span>
+        </button>
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-2xl shadow-ink/[0.02]">
@@ -222,6 +247,15 @@ export default function OrdersHistoryTable({
                     </td>
                     <td className="px-10 py-6 text-right space-y-1">
                       <div className="flex items-center justify-end gap-2">
+                        {isWarehouse && (order.status === 'In-Transit' || order.status === 'Received') && (
+                          <button 
+                            onClick={() => generateInvoicePDF(order, branch, products)}
+                            className="p-3 bg-secondary/10 text-secondary rounded-xl hover:bg-secondary hover:text-white transition-all active:scale-95"
+                            title="Download Invoice"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
+                        )}
                         {isWarehouse && order.status === 'Pending' && (
                           <button 
                             onClick={() => openProcessing(order)}
@@ -290,20 +324,47 @@ export default function OrdersHistoryTable({
                   <h3 className="text-4xl font-serif font-medium text-ink italic">Acknowledge & Process</h3>
                   <p className="text-[10px] font-mono text-primary font-bold uppercase tracking-widest mt-1">Adjusting supply magnitudes for #{String(processingOrder.id).slice(0, 8)}</p>
                 </div>
-                <button onClick={() => setProcessingOrder(null)} className="p-3 bg-background hover:bg-ink hover:text-white rounded-full transition-all active:scale-90">
-                  <X className="w-6 h-6" />
-                </button>
+                <div className="flex items-center gap-3">
+                  <button 
+                    type="button"
+                    onClick={addItemToProcessing}
+                    className="p-3 bg-primary/10 text-primary rounded-full hover:bg-primary hover:text-white transition-all active:scale-95 flex items-center gap-2 pr-5"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span className="text-[10px] font-mono font-black uppercase tracking-widest">Add Item</span>
+                  </button>
+                  <button onClick={() => setProcessingOrder(null)} className="p-3 bg-background hover:bg-ink hover:text-white rounded-full transition-all active:scale-90">
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
               </div>
 
               <div className="max-h-[40vh] overflow-y-auto pr-4 custom-scrollbar space-y-4">
                 {processingItems.map((item, idx) => {
                   const product = products.find(p => p.id === item.productId);
                   return (
-                    <div key={idx} className="p-6 bg-background rounded-2xl border border-ink/5 flex items-center justify-between gap-6">
+                    <div key={idx} className="p-6 bg-background rounded-2xl border border-ink/5 flex items-center justify-between gap-6 relative">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-mono font-black uppercase tracking-widest text-primary mb-1">{product?.id}</p>
-                        <h4 className="text-lg font-serif font-medium text-ink truncate italic">{product?.name}</h4>
-                        <p className="text-[10px] font-mono font-bold text-ink/40 mt-1 uppercase tracking-tighter">Requested Quantity: {item.quantity}</p>
+                        {item.isNew ? (
+                          <div className="space-y-2">
+                             <p className="text-[10px] font-mono font-black uppercase tracking-widest text-primary mb-1">New Allocation</p>
+                             <select 
+                               value={item.productId}
+                               onChange={(e) => updateProcessingItemProduct(idx, e.target.value)}
+                               className="w-full bg-white border border-ink/5 px-4 py-2 rounded-xl text-xs font-serif italic focus:outline-none focus:ring-2 focus:ring-primary/20"
+                             >
+                               {products.map(p => (
+                                 <option key={p.id} value={p.id}>{p.name}</option>
+                               ))}
+                             </select>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-[10px] font-mono font-black uppercase tracking-widest text-primary mb-1">{product?.id}</p>
+                            <h4 className="text-lg font-serif font-medium text-ink truncate italic">{product?.name}</h4>
+                            <p className="text-[10px] font-mono font-bold text-ink/40 mt-1 uppercase tracking-tighter">Requested Quantity: {item.quantity}</p>
+                          </>
+                        )}
                       </div>
                       
                       <div className="flex items-center gap-4 bg-white p-2 rounded-xl border border-ink/5 shadow-sm">
@@ -315,6 +376,13 @@ export default function OrdersHistoryTable({
                           className="w-24 px-4 py-3 bg-background border-none rounded-lg text-xs font-mono font-bold text-ink focus:ring-2 focus:ring-primary/20 text-center"
                           min="0"
                         />
+                        <button 
+                          onClick={() => removeItemFromProcessing(idx)}
+                          className="p-2 text-danger hover:bg-danger/5 rounded-lg transition-all"
+                          title="Remove from shipment"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   );

@@ -224,21 +224,37 @@ export default function POSView({ products, branches, inventory, processSale, us
               className="w-full pl-14 pr-6 py-5 bg-white border border-ink/5 rounded-[2rem] shadow-xl shadow-ink/[0.01] focus:outline-none focus:ring-4 focus:ring-primary/5 transition-all font-medium"
             />
           </div>
-          <div className="flex items-center gap-4 bg-white px-6 py-4 rounded-[2rem] border border-ink/5 shadow-xl shadow-ink/[0.01]">
-            <Store className="w-5 h-5 text-primary" />
-            <select 
-              value={selectedBranch}
-              disabled={profile?.role === 'Supervisor' || profile?.role === 'Cashier'}
-              onChange={(e) => {
-                setSelectedBranch(e.target.value);
-                setCart([]); // Clear cart when branch changes to avoid stock issues
-              }}
-              className="bg-transparent focus:outline-none font-bold text-xs uppercase tracking-widest text-ink appearance-none cursor-pointer pr-4 disabled:cursor-not-allowed"
-            >
-              {branches.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
+          <div className="flex items-center gap-4 bg-white px-8 py-4 rounded-[2rem] border border-ink/5 shadow-xl shadow-ink/[0.01]">
+            <div className="w-10 h-10 bg-primary/5 rounded-2xl flex items-center justify-center text-primary">
+              <Store className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-mono text-ink/40 uppercase font-black tracking-widest leading-none mb-1.5">Active Node</span>
+              <div className="relative">
+                <select 
+                  value={selectedBranch}
+                  disabled={!!profile?.branch_id && (profile?.role === 'Supervisor' || profile?.role === 'Cashier')}
+                  onChange={(e) => {
+                    setSelectedBranch(e.target.value);
+                    setCart([]); // Clear cart when branch changes to avoid stock issues
+                  }}
+                  className="bg-transparent focus:outline-none font-black text-xs uppercase tracking-widest text-ink appearance-none cursor-pointer pr-6 disabled:cursor-not-allowed leading-none"
+                >
+                  {branches.length > 0 ? (
+                    branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))
+                  ) : (
+                    <option value="">No Branches Available</option>
+                  )}
+                </select>
+                {(!(profile?.branch_id && (profile?.role === 'Supervisor' || profile?.role === 'Cashier'))) && (
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <div className="w-1.5 h-1.5 border-r-2 border-b-2 border-ink/30 rotate-45" />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

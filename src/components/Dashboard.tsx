@@ -63,7 +63,8 @@ export default function Dashboard({ inventory, branches, products, orders, trans
 
   React.useEffect(() => {
     // Add a slight delay to ensure parent layout is finished before Recharts calculates dimensions
-    const timer = setTimeout(() => setIsMounted(true), 100);
+    // 300ms matches standard transition times
+    const timer = setTimeout(() => setIsMounted(true), 300);
     return () => clearTimeout(timer);
   }, []);
 
@@ -261,7 +262,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
           </div>
           <div className="min-h-[400px] h-[400px] w-full relative min-w-0">
             {isMounted && (
-              <ResponsiveContainer width="100%" height="100%" debounce={1}>
+              <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={branchStock} layout="vertical" margin={{ left: 20, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} opacity={0.5} />
                   <XAxis type="number" hide />
@@ -311,7 +312,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
           </div>
           <div className="min-h-[400px] h-[400px] w-full relative min-w-0">
             {isMounted && (
-              <ResponsiveContainer width="100%" height="100%" debounce={1}>
+              <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={productStock}
@@ -424,7 +425,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
 
             <div className="min-h-[200px] h-[200px] w-full bg-white/[0.03] rounded-[2rem] p-4 border border-white/[0.05] relative min-w-0">
               {isMounted && (
-                <ResponsiveContainer width="100%" height="100%" debounce={1}>
+                <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={movementTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">

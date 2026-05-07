@@ -500,7 +500,7 @@ export function useInventory() {
     if (!user) {
       console.error("[initiateOrder] No user session found.");
       setError("Please sign in to place orders.");
-      return;
+      return null;
     }
     
     try {
@@ -525,6 +525,10 @@ export function useInventory() {
       }
       console.log("[initiateOrder] Profile OK. Role:", prof.role);
 
+      // Warehouse role starts as In-Transit
+      const isWarehouse = prof.role === 'Warehouse' || prof.role === 'Administrator' || prof.role === 'Manager';
+      const initialStatus = isWarehouse ? 'In-Transit' : 'Pending';
+
       const insertPayload = {
         branch_id: branchId,
         items: items.map(item => ({ 
@@ -532,7 +536,7 @@ export function useInventory() {
           quantity: Number(item.quantity), 
           suppliedQuantity: Number(item.quantity) 
         })),
-        status: 'Pending',
+        status: initialStatus,
         created_at: new Date().toISOString(),
         user_id: user.id,
         notes: notes || ''
@@ -581,7 +585,7 @@ export function useInventory() {
             .map((s: any) => ({
               user_id: s.id,
               title: 'Order Initiated',
-              message: `New pending order for ${bName}. ID: ${String(order.id).slice(0, 8)}`,
+              message: `${isWarehouse ? 'Shipment' : 'Requisition'} initiated for ${bName}. ID: ${String(order.id).slice(0, 8)}`,
               created_at: new Date().toISOString()
             }));
           
@@ -596,10 +600,12 @@ export function useInventory() {
       console.log("[initiateOrder] Syncing app state...");
       await fetchData();
       console.log("[initiateOrder] Done.");
+      return order;
     } catch (err: any) {
       console.error("[initiateOrder] FATAL:", err);
       setError(err?.message || "Order failed.");
       handleSupabaseError(err, OperationType.WRITE, 'orders/initiate');
+      return null;
     }
   };
 
