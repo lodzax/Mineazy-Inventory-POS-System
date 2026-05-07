@@ -49,6 +49,9 @@ export default function OrdersHistoryTable({
   const [branchFilter, setBranchFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
   const [processingOrder, setProcessingOrder] = useState<any | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<any | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
@@ -94,6 +97,8 @@ export default function OrdersHistoryTable({
   });
 
   const sortedOrders = [...filteredOrders].sort((a, b) => (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0));
+  const totalPages = Math.ceil(sortedOrders.length / itemsPerPage);
+  const paginatedOrders = sortedOrders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const exportToPDF = () => {
     const doc = new jsPDF();
@@ -256,7 +261,7 @@ export default function OrdersHistoryTable({
             <div className="relative">
               <select 
                 value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
+                onChange={(e) => { setBranchFilter(e.target.value); setCurrentPage(1); }}
                 className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
               >
                 <option value="all">All Branches</option>
@@ -273,7 +278,7 @@ export default function OrdersHistoryTable({
             <div className="relative">
               <select 
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                 className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
               >
                 <option value="all">Any Status</option>
@@ -292,7 +297,7 @@ export default function OrdersHistoryTable({
               <input 
                 type="date"
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
+                onChange={(e) => { setDateFilter(e.target.value); setCurrentPage(1); }}
                 className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
               />
               <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
@@ -306,7 +311,7 @@ export default function OrdersHistoryTable({
                 type="text"
                 placeholder="Search stream..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
                 className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
               />
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
@@ -373,7 +378,7 @@ export default function OrdersHistoryTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-ink/[0.03]">
-              {sortedOrders.map((order) => {
+              {paginatedOrders.map((order) => {
                 const branch = branches.find(b => b.id === order.branch_id);
                 return (
                   <tr key={order.id} className="text-xs hover:bg-background transition-all group">
@@ -457,7 +462,7 @@ export default function OrdersHistoryTable({
                   </tr>
                 );
               })}
-              {sortedOrders.length === 0 && (
+              {paginatedOrders.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-10 py-32 text-center">
                     <div className="flex flex-col items-center gap-4 opacity-10">
@@ -470,6 +475,48 @@ export default function OrdersHistoryTable({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination UI */}
+        {totalPages > 1 && (
+          <div className="px-10 py-6 bg-background/50 border-t border-ink/5 flex items-center justify-between no-print">
+            <div className="text-[10px] font-mono font-black uppercase tracking-widest text-ink/30">
+              Showing <span className="text-ink">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-ink">{Math.min(currentPage * itemsPerPage, sortedOrders.length)}</span> of <span className="text-ink">{sortedOrders.length}</span> entries
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 bg-white border border-ink/5 rounded-lg text-ink disabled:opacity-20 transition-all hover:bg-ink hover:text-white"
+              >
+                <ArrowUpDown className="w-4 h-4 rotate-180" />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-8 h-8 rounded-lg text-[10px] font-mono font-black transition-all ${
+                      currentPage === page 
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                        : 'bg-white border border-ink/5 text-ink/40 hover:text-ink'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 bg-white border border-ink/5 rounded-lg text-ink disabled:opacity-20 transition-all hover:bg-ink hover:text-white"
+              >
+                <ArrowUpDown className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Processing Modal */}

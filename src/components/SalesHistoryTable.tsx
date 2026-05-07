@@ -17,7 +17,11 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
   const [productFilter, setProductFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
   const [selectedSale, setSelectedSale] = useState<any | null>(null);
+
   const handlePrintReceipt = (sale: any) => {
     setSelectedSale(sale);
     window.focus();
@@ -48,6 +52,9 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
   });
 
   const sortedSales = [...filteredSales].sort((a, b) => (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0));
+  
+  const totalPages = Math.ceil(sortedSales.length / itemsPerPage);
+  const paginatedSales = sortedSales.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const exportCSV = () => {
     const headers = ['Date', 'Sale ID', 'Branch', 'Cashier', 'Customer', 'Items', 'Total'];
@@ -156,7 +163,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
               type="text"
               placeholder="Query sequence..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               className="w-full pl-12 pr-4 py-4 bg-white border border-ink/5 rounded-2xl font-medium text-xs focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01]"
             />
           </div>
@@ -168,14 +175,14 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
             <input 
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
               className="flex-1 px-3 py-3 bg-background rounded-xl text-[10px] font-bold text-ink focus:outline-none uppercase"
             />
             <ArrowRight className="w-4 h-4 text-ink/10 flex-shrink-0" />
             <input 
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
               className="flex-1 px-3 py-3 bg-background rounded-xl text-[10px] font-bold text-ink focus:outline-none uppercase"
             />
           </div>
@@ -186,7 +193,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
           <div className="flex gap-3">
             <select 
               value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
+              onChange={(e) => { setBranchFilter(e.target.value); setCurrentPage(1); }}
               className="flex-1 px-4 py-4 bg-white border border-ink/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-ink focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01] appearance-none cursor-pointer"
             >
               <option value="all">Global Matrix</option>
@@ -194,7 +201,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
             </select>
             <select 
               value={productFilter}
-              onChange={(e) => setProductFilter(e.target.value)}
+              onChange={(e) => { setProductFilter(e.target.value); setCurrentPage(1); }}
               className="flex-1 px-4 py-4 bg-white border border-ink/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-ink focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01] appearance-none cursor-pointer"
             >
               <option value="all">Every Artifact</option>
@@ -243,7 +250,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
               </tr>
             </thead>
             <tbody className="divide-y divide-ink/[0.03]">
-              {sortedSales.map((sale) => {
+              {paginatedSales.map((sale) => {
                 const branch = branches.find(b => b.id === sale.branch_id);
                 return (
                   <tr key={sale.id} className="text-xs hover:bg-background transition-all group">
@@ -293,7 +300,7 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
                   </tr>
                 );
               })}
-              {sortedSales.length === 0 && (
+              {paginatedSales.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-8 py-32 text-center">
                     <div className="flex flex-col items-center gap-4 opacity-20">
@@ -306,6 +313,48 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
             </tbody>
           </table>
         </div>
+
+        {/* Pagination UI */}
+        {totalPages > 1 && (
+          <div className="px-8 py-6 bg-background/50 border-t border-ink/5 flex items-center justify-between no-print">
+            <div className="text-[10px] font-mono font-black uppercase tracking-widest text-ink/30">
+              Showing <span className="text-ink">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-ink">{Math.min(currentPage * itemsPerPage, sortedSales.length)}</span> of <span className="text-ink">{sortedSales.length}</span> entries
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-2 bg-white border border-ink/5 rounded-lg text-ink disabled:opacity-20 transition-all hover:bg-ink hover:text-white"
+              >
+                <ArrowRight className="w-4 h-4 rotate-180" />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-8 h-8 rounded-lg text-[10px] font-mono font-black transition-all ${
+                      currentPage === page 
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                        : 'bg-white border border-ink/5 text-ink/40 hover:text-ink'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 bg-white border border-ink/5 rounded-lg text-ink disabled:opacity-20 transition-all hover:bg-ink hover:text-white"
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <POSReceipt 
