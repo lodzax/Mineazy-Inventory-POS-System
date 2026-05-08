@@ -131,15 +131,15 @@ export default function POSView({ products, branches, inventory, processSale, us
     doc.text(dateStr, 55, 52);
 
     doc.setFont("helvetica", "normal");
-    doc.text(`CASHIER:`, 190, 45, { align: "right" });
+    doc.text(`CASHIER:`, 145, 45, { align: "right" });
     doc.setFont("helvetica", "bold");
-    doc.text(cashier, 165, 45, { align: "right" });
+    doc.text(cashier, 190, 45, { align: "right" });
 
     if (lastSaleReceipt.customer_name) {
       doc.setFont("helvetica", "normal");
-      doc.text(`CUSTOMER:`, 190, 52, { align: "right" });
+      doc.text(`CUSTOMER:`, 145, 52, { align: "right" });
       doc.setFont("helvetica", "bold");
-      doc.text(lastSaleReceipt.customer_name, 165, 52, { align: "right" });
+      doc.text(lastSaleReceipt.customer_name, 190, 52, { align: "right" });
     }
 
     // Items Table
@@ -462,7 +462,21 @@ export default function POSView({ products, branches, inventory, processSale, us
                   <span className="text-lg font-bold text-gray-800 tracking-tight">${total.toFixed(2)}</span>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono font-black uppercase tracking-widest text-ink/30 ml-4">Customer Designation</label>
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        placeholder="e.g. Tendai Moyo"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        className="w-full pl-12 pr-6 py-4 bg-background border border-ink/5 rounded-xl text-xs font-bold focus:ring-4 focus:ring-primary/5 transition-all outline-none"
+                      />
+                      <User className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/20" />
+                    </div>
+                  </div>
+
                   <button 
                     disabled={cart.length === 0 || isProcessing}
                     onClick={handleCheckout}
@@ -517,6 +531,19 @@ export default function POSView({ products, branches, inventory, processSale, us
               </div>
 
               <div className="space-y-6 mb-10">
+                <div className="flex flex-col gap-2 px-6 py-4 bg-background rounded-2xl border border-ink/5">
+                  <div className="flex justify-between items-center text-[9px] font-mono font-black uppercase tracking-widest text-ink/20">
+                    <span>Cashier Artifact</span>
+                    <span className="text-ink/60">{lastSaleReceipt.cashier_name || user?.displayName || user?.email || 'System User'}</span>
+                  </div>
+                  {lastSaleReceipt.customer_name && (
+                    <div className="flex justify-between items-center text-[9px] font-mono font-black uppercase tracking-widest text-ink/20">
+                      <span>Customer Identity</span>
+                      <span className="text-ink/60">{lastSaleReceipt.customer_name}</span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="border-y-2 border-ink/[0.03] border-dashed py-8 space-y-5">
                   {lastSaleReceipt.items.map((item: any, idx: number) => {
                     const product = products.find(p => p.id === item.productId);

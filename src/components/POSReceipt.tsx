@@ -32,7 +32,7 @@ export default function POSReceipt({ sale, branch, cashier, products }: POSRecei
         </div>
         <div className="flex justify-between">
           <span>CASHIER:</span>
-          <span className="uppercase">{cashier.split(' ')[0]}</span>
+          <span className="uppercase text-[9px]">{cashier}</span>
         </div>
         <div className="flex justify-between font-bold">
           <span>RECEIPT:</span>

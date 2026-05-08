@@ -98,6 +98,7 @@ export default function App() {
     updateBranch,
     deleteBranch,
     updateThreshold,
+    transferStock,
     error,
     loading: dataLoading,
     authLoading,
@@ -792,6 +793,7 @@ export default function App() {
                   updateProduct={updateProduct}
                   updateThreshold={updateThreshold}
                   convertMercury={convertMercury}
+                  transferStock={transferStock}
                   profile={profile}
                 />
               )}

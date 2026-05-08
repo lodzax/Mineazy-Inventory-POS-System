@@ -203,7 +203,7 @@ export function useInventory() {
       let bQuery = supabase.from('branches').select('*');
       let pQuery = supabase.from('products').select('*');
       let iQuery = supabase.from('inventory').select('*');
-      let tQuery = supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(100);
+      let tQuery = supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500);
       let oQuery = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
       let sQuery = supabase.from('sales').select('*').order('timestamp', { ascending: false }).limit(100);
       let pAllQuery = supabase.from('profiles').select('id, email, role');
@@ -375,6 +375,19 @@ export function useInventory() {
     await batchUpdateStocks([{ branchId, productId, amount, type, notes }]);
     if (refresh) {
       await fetchData();
+    }
+  };
+
+  const transferStock = async (sourceBranchId: string, destBranchId: string, productId: string, amount: number, notes: string = '') => {
+    if (!user) return;
+    try {
+      await batchUpdateStocks([
+        { branchId: sourceBranchId, productId, amount, type: 'remove', notes: `Transfer to ${destBranchId}: ${notes}` },
+        { branchId: destBranchId, productId, amount, type: 'add', notes: `Transfer from ${sourceBranchId}: ${notes}` }
+      ]);
+      await fetchData();
+    } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'inventory/transfer');
     }
   };
 
@@ -661,24 +674,37 @@ export function useInventory() {
 
       const { error } = await supabase
         .from('orders')
-        .update({ status: 'Cancelled' })
+        .update({ 
+          status: 'Cancelled',
+          notes: order.notes ? `${order.notes}\n[CANCELLED]: ${reason}` : `[CANCELLED]: ${reason}`,
+          processed_at: new Date().toISOString(), // Using this as a generic update timestamp
+          processed_by: user.id
+        })
         .eq('id', orderId);
       if (error) throw error;
 
       // Log transactions for audit trail
-      if (order.items && order.items.length > 0) {
-        const transactionPayloads = order.items.map((item: any) => ({
-          branch_id: order.branch_id,
-          product_id: item.productId,
-          amount: 0,
-          type: 'remove', // Arbitrary type since it's 0 amount, just for logging
-          notes: `ORDER #${String(orderId).slice(0, 8)} Cancellation${reason ? `: ${reason}` : ''}`,
-          user_id: user.id,
-          timestamp: new Date().toISOString()
-        }));
+      const transactionPayloads = (order.items && order.items.length > 0) 
+        ? order.items.map((item: any) => ({
+            branch_id: order.branch_id,
+            product_id: item.productId,
+            amount: 0,
+            type: 'remove', 
+            notes: `ORDER #${String(orderId).slice(0, 8)} ABORTED${reason ? `: ${reason}` : ''}`,
+            user_id: user.id,
+            timestamp: new Date().toISOString()
+          }))
+        : [{
+            branch_id: order.branch_id,
+            product_id: 'SYSTEM', // Fallback for order-level log without specific products
+            amount: 0,
+            type: 'remove',
+            notes: `ORDER #${String(orderId).slice(0, 8)} ABORTED${reason ? `: ${reason}` : ''}`,
+            user_id: user.id,
+            timestamp: new Date().toISOString()
+          }];
 
-        await supabase.from('transactions').insert(transactionPayloads);
-      }
+      await supabase.from('transactions').insert(transactionPayloads);
 
       const bName = (order.branches as any)?.name || 'Branch';
 
@@ -971,6 +997,7 @@ export function useInventory() {
     processSale,
     updateProduct,
     convertMercury,
+    transferStock,
     refreshData,
     error,
     loading,

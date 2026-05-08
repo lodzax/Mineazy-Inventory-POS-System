@@ -139,6 +139,62 @@ export default function Dashboard({ inventory, branches, products, orders, trans
   const totalRevenue = React.useMemo(() => (sales || []).reduce((sum, s) => sum + (s.total || 0), 0), [sales]);
   const salesCount = sales?.length || 0;
 
+  // Inventory Level Fluctuations for top products
+  const inventoryTimeSeries = React.useMemo(() => {
+    // 1. Get top 5 products by transaction volume
+    const topProducts = products.map(p => ({
+      ...p,
+      volume: transactions.filter(t => t.product_id === p.id).length
+    })).sort((a, b) => b.volume - a.volume).slice(0, 5);
+
+    const days = 14; 
+    const data = [];
+    
+    // Calculate current aggregate stocks
+    const currentStocks = new Map();
+    products.forEach(p => {
+      const total = inventory
+        .filter(i => i.product_id === p.id)
+        .reduce((sum, item) => sum + Number(item.stock || 0), 0);
+      currentStocks.set(p.id, total);
+    });
+
+    for (let i = 0; i <= days; i++) {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() - i);
+        targetDate.setHours(23, 59, 59, 999);
+        const targetTs = targetDate.getTime();
+
+        const dayData: any = {
+          date: targetDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          rawDate: targetDate
+        };
+
+        topProducts.forEach(p => {
+           // Sum of transactions AFTER targetDate
+           const txAfter = transactions.filter(t => 
+             t.product_id === p.id && 
+             new Date(t.timestamp).getTime() > targetTs
+           );
+
+           let delta = 0;
+           txAfter.forEach(t => {
+             if (t.type === 'add') delta += t.amount;
+             else if (t.type === 'remove') delta -= t.amount;
+           });
+
+           dayData[p.name] = Math.max(0, (currentStocks.get(p.id) || 0) - delta);
+        });
+        
+        data.push(dayData);
+    }
+
+    return { 
+      data: data.slice().sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime()),
+      activeProducts: topProducts
+    };
+  }, [inventory, transactions, products]);
+
   const COLORS = ['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#F43F5E', '#8B5CF6', '#EC4899'];
 
   return (
@@ -262,7 +318,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
           </div>
           <div className="min-h-[400px] h-[400px] w-full relative min-w-0">
             {isMounted && (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <BarChart data={branchStock} layout="vertical" margin={{ left: 20, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} opacity={0.5} />
                   <XAxis type="number" hide />
@@ -312,7 +368,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
           </div>
           <div className="min-h-[400px] h-[400px] w-full relative min-w-0">
             {isMounted && (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie
                     data={productStock}
@@ -346,6 +402,71 @@ export default function Dashboard({ inventory, branches, products, orders, trans
           </div>
         </motion.div>
       </div>
+      
+      {/* Inventory Fluctuations Chart */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white p-8 rounded-[2.5rem] border border-ink/5 shadow-xl shadow-ink/[0.01]"
+      >
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+          <div>
+            <h3 className="font-serif font-medium text-2xl text-ink italic">Magnitude Flux</h3>
+            <p className="text-[10px] font-mono text-ink/40 uppercase font-bold tracking-widest mt-1">Artifact History (Past 14 Cycles)</p>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-1.5 bg-background rounded-full border border-ink/5">
+            <span className="text-[9px] font-mono font-bold text-ink/40 uppercase tracking-widest">Active Artifacts: <span className="text-primary">{inventoryTimeSeries.activeProducts.length}</span></span>
+          </div>
+        </div>
+        
+        <div className="min-h-[400px] h-[400px] w-full relative min-w-0">
+          {isMounted && (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <AreaChart data={inventoryTimeSeries.data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  {inventoryTimeSeries.activeProducts.map((p, idx) => (
+                    <linearGradient key={`grad-${p.id}`} id={`color-${p.id}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS[idx % COLORS.length]} stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor={COLORS[idx % COLORS.length]} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} opacity={0.5} />
+                <XAxis 
+                  dataKey="date" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 9, fill: '#64748B', fontWeight: 'bold', fontFamily: 'JetBrains Mono' }} 
+                  dy={10}
+                />
+                <YAxis 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 9, fill: '#64748B', fontWeight: 'bold', fontFamily: 'JetBrains Mono' }} 
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend 
+                  iconType="circle"
+                  wrapperStyle={{ paddingTop: '30px', fontSize: '9px', textTransform: 'uppercase', fontWeight: 'black', letterSpacing: '1px' }}
+                />
+                {inventoryTimeSeries.activeProducts.map((p, idx) => (
+                  <Area
+                    key={p.id}
+                    type="monotone"
+                    dataKey={p.name}
+                    stroke={COLORS[idx % COLORS.length]}
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill={`url(#color-${p.id})`}
+                    animationDuration={2000}
+                    animationBegin={idx * 150}
+                  />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </motion.div>
 
       {/* Critical Stock and Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
@@ -425,7 +546,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
 
             <div className="min-h-[200px] h-[200px] w-full bg-white/[0.03] rounded-[2rem] p-4 border border-white/[0.05] relative min-w-0">
               {isMounted && (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <AreaChart data={movementTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
