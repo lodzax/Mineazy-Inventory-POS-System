@@ -61,14 +61,16 @@ export default function OrdersHistoryTable({
   const [showInitiateModal, setShowInitiateModal] = useState(false);
   const [newOrderBranch, setNewOrderBranch] = useState<string>('');
 
-  // Sync branch for limited roles
+  // Sync branch for limited roles only once or when profile/branches change initially
   React.useEffect(() => {
-    if (profile?.branch_id) {
-      setNewOrderBranch(profile.branch_id.toLowerCase());
-    } else if (branches.length > 0 && !newOrderBranch) {
-      setNewOrderBranch(branches[0].id);
+    if (!newOrderBranch) {
+      if (profile?.branch_id) {
+        setNewOrderBranch(profile.branch_id.toLowerCase());
+      } else if (branches.length > 0) {
+        setNewOrderBranch(branches[0].id);
+      }
     }
-  }, [profile, branches, newOrderBranch]);
+  }, [profile, branches]);
 
   const [newOrderItems, setNewOrderItems] = useState<{ productId: string, quantity: number }[]>([]);
   const [newOrderNotes, setNewOrderNotes] = useState('');
@@ -728,17 +730,20 @@ export default function OrdersHistoryTable({
                   <span>Destination Node</span>
                   <div className="h-px flex-1 bg-ink/5" />
                 </label>
-                <select 
-                  required
-                  value={newOrderBranch}
-                  onChange={(e) => setNewOrderBranch(e.target.value)}
-                  className="w-full px-8 py-5 bg-background border border-ink/5 rounded-2xl text-xs font-mono font-black uppercase tracking-widest focus:ring-4 focus:ring-primary/5 transition-all outline-none appearance-none"
-                >
-                  <option value="">SELECT BRANCH</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select 
+                    required
+                    value={newOrderBranch}
+                    onChange={(e) => setNewOrderBranch(e.target.value)}
+                    className="w-full pl-12 pr-8 py-5 bg-background border border-ink/5 rounded-2xl text-xs font-mono font-black uppercase tracking-widest focus:ring-4 focus:ring-primary/5 transition-all outline-none appearance-none"
+                  >
+                    <option value="">SELECT DESTINATION</option>
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>
+                    ))}
+                  </select>
+                  <Building2 className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
+                </div>
               </div>
 
               <div className="space-y-4">
