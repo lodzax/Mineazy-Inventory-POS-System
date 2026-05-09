@@ -176,7 +176,8 @@ export default function OrdersHistoryTable({
 
   const updateItemSupply = (idx: number, val: string) => {
     const newItems = [...processingItems];
-    newItems[idx].suppliedQuantity = val === '' ? 0 : parseFloat(val);
+    const parsed = parseFloat(val);
+    newItems[idx].suppliedQuantity = isNaN(parsed) ? 0 : parsed;
     setProcessingItems(newItems);
   };
 
@@ -245,7 +246,12 @@ export default function OrdersHistoryTable({
 
   const updateNewOrderItem = (idx: number, field: string, val: any) => {
     const items = [...newOrderItems];
-    (items[idx] as any)[field] = field === 'quantity' ? (val === '' ? 0 : parseFloat(val)) : val;
+    if (field === 'quantity') {
+      const parsed = parseFloat(val);
+      (items[idx] as any)[field] = isNaN(parsed) ? 0 : parsed;
+    } else {
+      (items[idx] as any)[field] = val;
+    }
     setNewOrderItems(items);
   };
 
@@ -589,7 +595,7 @@ export default function OrdersHistoryTable({
                         <label className="text-[9px] font-mono font-black uppercase tracking-widest text-ink/30 px-3">Supplied</label>
                         <input 
                           type="number"
-                          value={item.suppliedQuantity || 0}
+                          value={isNaN(item.suppliedQuantity) ? '' : item.suppliedQuantity}
                           onChange={(e) => updateItemSupply(idx, e.target.value)}
                           className="w-24 px-4 py-3 bg-background border-none rounded-lg text-xs font-mono font-bold text-ink focus:ring-2 focus:ring-primary/20 text-center"
                           min="0"
@@ -778,7 +784,7 @@ export default function OrdersHistoryTable({
                       <div className="w-24 space-y-1.5">
                         <input 
                           type="number"
-                          value={item.quantity}
+                          value={isNaN(item.quantity) ? '' : item.quantity}
                           onChange={(e) => updateNewOrderItem(idx, 'quantity', e.target.value)}
                           className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl text-xs font-mono font-bold text-center"
                           min="1"

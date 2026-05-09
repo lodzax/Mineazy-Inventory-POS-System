@@ -69,19 +69,26 @@ export default function Dashboard({ inventory, branches, products, orders, trans
   }, []);
 
   // Aggregate stock by product
-  const productStock = React.useMemo(() => products.map(p => ({
-    name: p.name,
-    stock: inventory
+  const productStock = React.useMemo(() => products.map(p => {
+    const stock = inventory
       .filter(i => i.product_id === p.id)
-      .reduce((sum, item) => sum + Number(item.stock || 0), 0)
-  })), [products, inventory]);
+      .reduce((sum, item) => {
+        const val = Number(item.stock);
+        return sum + (isNaN(val) ? 0 : val);
+      }, 0);
+    return {
+      name: p.name,
+      stock: stock
+    };
+  }), [products, inventory]);
 
   // Aggregate stock by branch
   const branchStock = React.useMemo(() => branches.map(b => {
     const data: any = { name: b.name };
     products.forEach(p => {
       const item = inventory.find(i => i.branch_id === b.id && i.product_id === p.id);
-      data[p.name] = item ? Number(item.stock || 0) : 0;
+      const val = item ? Number(item.stock) : 0;
+      data[p.name] = isNaN(val) ? 0 : val;
     });
     return data;
   }), [branches, products, inventory]);
@@ -155,7 +162,10 @@ export default function Dashboard({ inventory, branches, products, orders, trans
     products.forEach(p => {
       const total = inventory
         .filter(i => i.product_id === p.id)
-        .reduce((sum, item) => sum + Number(item.stock || 0), 0);
+        .reduce((sum, item) => {
+          const val = Number(item.stock);
+          return sum + (isNaN(val) ? 0 : val);
+        }, 0);
       currentStocks.set(p.id, total);
     });
 
@@ -179,11 +189,15 @@ export default function Dashboard({ inventory, branches, products, orders, trans
 
            let delta = 0;
            txAfter.forEach(t => {
-             if (t.type === 'add') delta += t.amount;
-             else if (t.type === 'remove') delta -= t.amount;
+             const amt = Number(t.amount);
+             if (!isNaN(amt)) {
+               if (t.type === 'add') delta += amt;
+               else if (t.type === 'remove') delta -= amt;
+             }
            });
 
-           dayData[p.name] = Math.max(0, (currentStocks.get(p.id) || 0) - delta);
+           const stockAtDate = (currentStocks.get(p.id) || 0) - delta;
+           dayData[p.name] = Math.max(0, isNaN(stockAtDate) ? 0 : stockAtDate);
         });
         
         data.push(dayData);

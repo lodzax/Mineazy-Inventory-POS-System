@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export enum OperationType {
@@ -12,9 +12,13 @@ export enum OperationType {
 }
 
 function handleSupabaseError(error: any, operationType: OperationType, path: string | null) {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables.");
+  }
+
   let message = error?.message || String(error);
   if (message === "Failed to fetch") {
-    message = "Network Error: Failed to fetch. Please verify your connection and Supabase configuration.";
+    message = "Network Error: Failed to fetch. Please verify your Supabase URL and network connection.";
   }
   
   const errInfo = {
@@ -33,6 +37,7 @@ export function useInventory() {
     inventory: any[],
     transactions: any[],
     orders: any[],
+    supplyOrders: any[],
     sales: any[],
     transfers: any[],
     profiles: any[]
@@ -42,6 +47,7 @@ export function useInventory() {
     inventory: [],
     transactions: [],
     orders: [],
+    supplyOrders: [],
     sales: [],
     transfers: [],
     profiles: []
@@ -71,9 +77,12 @@ export function useInventory() {
             setLoading(false);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("[initializeAuth] Failed:", err);
         if (mounted) {
+          if (err?.message === "Failed to fetch") {
+            setError("Connection Error: Failed to initialize security session. Please check your Supabase configuration.");
+          }
           setAuthLoading(false);
           setLoading(false);
         }
@@ -94,7 +103,7 @@ export function useInventory() {
           setProfile(null);
           // Initial branches fetch for login screen - with timeout
           try {
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Initial branches timeout")), 10000));
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Initial branches timeout")), 30000));
             const fetchPromise = supabase.from('branches').select('*');
             const { data: bData } = await Promise.race([fetchPromise, timeoutPromise]) as any;
             if (bData && mounted) setData(prev => ({ ...prev, branches: bData || [] }));
@@ -182,6 +191,7 @@ export function useInventory() {
         inventory: [],
         transactions: [],
         orders: [],
+        supplyOrders: [],
         sales: [],
         transfers: []
       });
@@ -196,6 +206,10 @@ export function useInventory() {
     fetchingRef.current = true;
     setError(null);
     try {
+      if (!isSupabaseConfigured) {
+        throw new Error("Supabase configuration missing (VITE_SUPABASE_URL/KEY)");
+      }
+
       const isLimited = activeProfile.role === 'Supervisor' || activeProfile.role === 'Cashier';
       const userBranch = activeProfile.branch_id;
 
@@ -205,6 +219,7 @@ export function useInventory() {
       let iQuery = supabase.from('inventory').select('*');
       let tQuery = supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500);
       let oQuery = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
+      let soQuery = supabase.from('supply_orders').select('*').order('created_at', { ascending: false }).limit(100);
       let sQuery = supabase.from('sales').select('*').order('timestamp', { ascending: false }).limit(100);
       let pAllQuery = supabase.from('profiles').select('id, email, role');
 
@@ -214,6 +229,7 @@ export function useInventory() {
         iQuery = iQuery.eq('branch_id', normalizedBranch);
         tQuery = tQuery.eq('branch_id', normalizedBranch);
         oQuery = oQuery.eq('branch_id', normalizedBranch);
+        soQuery = soQuery.eq('destination_branch_id', normalizedBranch);
         sQuery = sQuery.eq('branch_id', normalizedBranch);
       }
 
@@ -225,7 +241,7 @@ export function useInventory() {
 
       // Perform queries one by one or in smaller chunks if parallel is struggling
       // For now, let's stick to Promise.all but with a better timeout and logging
-      const queriesPromises = Promise.all([bQuery, pQuery, iQuery, tQuery, oQuery, sQuery, pAllQuery]);
+      const queriesPromises = Promise.all([bQuery, pQuery, iQuery, tQuery, oQuery, soQuery, sQuery, pAllQuery]);
       
       const results = await Promise.race([
         queriesPromises,
@@ -238,12 +254,13 @@ export function useInventory() {
         { data: iData, error: iErr },
         { data: tData, error: tErr },
         { data: oData, error: oErr },
+        { data: soData, error: soErr },
         { data: sData, error: sErr },
         { data: prData, error: prErr }
       ] = results;
 
-      if (bErr || pErr || iErr || tErr || oErr || sErr || prErr) {
-        console.warn("[fetchData] One or more queries failed:", { bErr, pErr, iErr, tErr, oErr, sErr, prErr });
+      if (bErr || pErr || iErr || tErr || oErr || soErr || sErr || prErr) {
+        console.warn("[fetchData] One or more queries failed:", { bErr, pErr, iErr, tErr, oErr, soErr, sErr, prErr });
       }
 
       setData({
@@ -251,12 +268,23 @@ export function useInventory() {
         products: (pData || []).map((p: any) => ({ ...p, category: p.category || 'General' })),
         inventory: (iData || []).map((i: any) => ({ 
           ...i, 
-          stock: Number(i.stock),
-          low_stock_threshold: Number(i.low_stock_threshold || 0)
+          stock: Number(i.stock) || 0,
+          low_stock_threshold: Number(i.low_stock_threshold || 0) || 0
         })),
-        transactions: (tData || []).map((t: any) => ({ ...t, amount: Number(t.amount) })),
+        transactions: (tData || []).map((t: any) => ({ ...t, amount: Number(t.amount) || 0 })),
         orders: oData || [],
-        sales: (sData || []).map((s: any) => ({ ...s, total: Number(s.total) })),
+        supplyOrders: (soData || []).map((so: any) => ({ 
+          ...so, 
+          total_amount: Number(so.total_amount) || 0,
+          items: (so.items || []).map((item: any) => ({
+            ...item,
+            quantity: Number(item.quantity) || 0,
+            unitCost: Number(item.unitCost) || 0,
+            vat: Number(item.vat) || 0,
+            total: Number(item.total) || 0
+          }))
+        })),
+        sales: (sData || []).map((s: any) => ({ ...s, total: Number(s.total) || 0 })),
         profiles: prData || [],
         transfers: []
       });
@@ -264,8 +292,10 @@ export function useInventory() {
     } catch (err: any) {
       console.error("[fetchData] Failed:", err);
       let message = err?.message || "Failed to connect to database";
-      if (message === "Failed to fetch") {
-        message = "Network connection interrupted.";
+      if (!isSupabaseConfigured) {
+        message = "Configuration Missing: Please set your Supabase URL and Anon Key in Settings.";
+      } else if (message === "Failed to fetch") {
+        message = "Connection Error: Failed to fetch data. Verify Supabase availability.";
       }
       setError(message);
     } finally {
@@ -286,7 +316,7 @@ export function useInventory() {
     await fetchData();
   };
 
-  const { branches, products, inventory, transactions, orders, sales, transfers, profiles } = data;
+  const { branches, products, inventory, transactions, orders, supplyOrders, sales, transfers, profiles } = data;
 
   const batchUpdateStocks = async (updates: {
     branchId: string,
@@ -809,6 +839,90 @@ export function useInventory() {
     }
   };
 
+  const createSupplyOrder = async (orderData: {
+    supplier_name: string,
+    invoice_number: string,
+    destination_branch_id: string,
+    date_of_supply: string,
+    items: any[],
+    total_amount: number
+  }) => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('supply_orders')
+        .insert({
+          ...orderData,
+          status: 'Created',
+          created_by: user.id,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      await fetchData();
+      return data;
+    } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'supply_orders');
+    }
+  };
+
+  const updateSupplyOrderStatus = async (orderId: string | number, status: 'In-Transit' | 'Cancelled') => {
+    if (!user) return;
+    try {
+      const { error } = await supabase
+        .from('supply_orders')
+        .update({ status })
+        .eq('id', orderId);
+      
+      if (error) throw error;
+      await fetchData();
+    } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'supply_orders/status');
+    }
+  };
+
+  const confirmSupplyReceipt = async (orderId: string | number) => {
+    if (!user) return;
+    try {
+      const { data: order, error: fetchError } = await supabase
+        .from('supply_orders')
+        .select('*')
+        .eq('id', orderId)
+        .single();
+      
+      if (fetchError || !order) throw fetchError || new Error('Supply order not found');
+      if (order.status !== 'In-Transit') throw new Error('Invalid status for confirmation');
+
+      // Update Inventory
+      const updates = order.items.map((item: any) => ({
+        branchId: order.destination_branch_id,
+        productId: item.productId,
+        amount: Number(item.quantity),
+        type: 'add' as const,
+        notes: `Supply Receipt: ${order.supplier_name} Inv#${order.invoice_number}`
+      }));
+
+      await batchUpdateStocks(updates);
+
+      // Final Status Update
+      const { error: updateError } = await supabase
+        .from('supply_orders')
+        .update({
+          status: 'Received',
+          received_at: new Date().toISOString(),
+          received_by: user.id
+        })
+        .eq('id', orderId);
+
+      if (updateError) throw updateError;
+      await fetchData();
+    } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'supply_orders/confirm');
+    }
+  };
+
   const updateProduct = async (id: string, updates: { price?: number, cost_price?: number, unit?: string, name?: string }) => {
     if (!user) return;
     try {
@@ -883,7 +997,7 @@ export function useInventory() {
     }
   };
 
-  const convertMercury = async (branchId: string) => {
+  const convertMercury = async (branchId: string, type: '1kg-to-500g' | '500g-to-16.5g' | '1kg-to-30g' = '1kg-to-30g') => {
     if (!user || !profile) return false;
     
     // Authorization check
@@ -894,25 +1008,47 @@ export function useInventory() {
     }
 
     try {
-      console.log(`[convertMercury] Starting conversion for branch: ${branchId}`);
+      console.log(`[convertMercury] Starting conversion ${type} for branch: ${branchId}`);
       
-      // 1. Verify we have enough 1kg stock in this branch
+      let sourceId = '';
+      let targetId = '';
+      let multiplier = 0;
+      let notesText = '';
+
+      if (type === '1kg-to-30g') {
+        sourceId = '1kg-mercury';
+        targetId = '30g-mercury';
+        multiplier = 33;
+        notesText = '1kg -> 33x30g';
+      } else if (type === '1kg-to-500g') {
+        sourceId = '1kg-mercury';
+        targetId = '500g-mercury';
+        multiplier = 2;
+        notesText = '1kg -> 2x500g';
+      } else if (type === '500g-to-16.5g') {
+        sourceId = '500g-mercury';
+        targetId = '16.5g-mercury';
+        multiplier = 2;
+        notesText = '500g -> 2x16.5g';
+      }
+
+      // 1. Verify we have enough source stock in this branch
       const { data: invData, error: fetchError } = await supabase
         .from('inventory')
         .select('*')
         .eq('branch_id', branchId)
-        .in('product_id', ['1kg-mercury', '30g-mercury']);
+        .in('product_id', [sourceId, targetId]);
 
       if (fetchError) throw fetchError;
 
-      const kgItem = invData?.find(i => i.product_id === '1kg-mercury');
-      const gramItem = invData?.find(i => i.product_id === '30g-mercury');
+      const sourceItem = invData?.find(i => i.product_id === sourceId);
+      const targetItem = invData?.find(i => i.product_id === targetId);
 
-      const kgStock = Number(kgItem?.stock || 0);
-      const gramStock = Number(gramItem?.stock || 0);
+      const sourceStock = Number(sourceItem?.stock || 0);
+      const targetStock = Number(targetItem?.stock || 0);
 
-      if (kgStock < 1) {
-        throw new Error("Insufficient stock: 1kg unit of Mercury is not available in this branch.");
+      if (sourceStock < 1) {
+        throw new Error(`Insufficient stock: ${sourceId} is not available in this branch.`);
       }
 
       // 2. Prepare Updates
@@ -920,14 +1056,14 @@ export function useInventory() {
       const inventoryUpdates = [
         {
           branch_id: branchId,
-          product_id: '1kg-mercury',
-          stock: kgStock - 1,
+          product_id: sourceId,
+          stock: sourceStock - 1,
           last_updated: timestamp
         },
         {
           branch_id: branchId,
-          product_id: '30g-mercury',
-          stock: gramStock + 33,
+          product_id: targetId,
+          stock: targetStock + multiplier,
           last_updated: timestamp
         }
       ];
@@ -935,21 +1071,21 @@ export function useInventory() {
       const transactionLogs = [
         {
           branch_id: branchId,
-          product_id: '1kg-mercury',
+          product_id: sourceId,
           type: 'remove',
           amount: 1,
           timestamp,
           user_id: user.id,
-          notes: 'Mercury Conversion: 1kg -> 33x30g (Approved by Supervisor)'
+          notes: `Mercury Conversion: ${notesText} (Approved by Supervisor)`
         },
         {
           branch_id: branchId,
-          product_id: '30g-mercury',
+          product_id: targetId,
           type: 'add',
-          amount: 33,
+          amount: multiplier,
           timestamp,
           user_id: user.id,
-          notes: 'Mercury Conversion: 1kg -> 33x30g (Approved by Supervisor)'
+          notes: `Mercury Conversion: ${notesText} (Approved by Supervisor)`
         }
       ];
 
@@ -980,6 +1116,7 @@ export function useInventory() {
     inventory, 
     transactions, 
     orders, 
+    supplyOrders,
     sales,
     transfers,
     profiles,
@@ -994,6 +1131,9 @@ export function useInventory() {
     processOrder,
     cancelOrder,
     confirmReceipt,
+    createSupplyOrder,
+    updateSupplyOrderStatus,
+    confirmSupplyReceipt,
     processSale,
     updateProduct,
     convertMercury,

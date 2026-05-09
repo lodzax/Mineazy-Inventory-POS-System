@@ -21,14 +21,15 @@ INSERT INTO branches (id, name, location) VALUES
 ('maphisa', 'Maphisa', 'Maphisa'),
 ('gweru-luton', 'Gweru-Luton Rd', 'Gweru'),
 ('gweru-bradford', 'Gweru-Bradford rd', 'Gweru'),
-('donnington', 'Donnington Warehouse', 'Bulawayo')
+('donnington', 'Donnington Warehouse', 'Bulawayo'),
+('belmont-warehouse', 'Belmont Warehouse', 'Bulawayo')
 ON CONFLICT (id) DO NOTHING;
 
 -- Create profiles first as other tables reference it
 CREATE TABLE IF NOT EXISTS profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
-  role TEXT CHECK (role IN ('Administrator', 'Manager', 'Supervisor', 'Cashier', 'Warehouse')) DEFAULT 'Cashier',
+  role TEXT CHECK (role IN ('Administrator', 'Manager', 'Supervisor', 'Cashier', 'Warehouse', 'Purchasing')) DEFAULT 'Cashier',
   branch_id TEXT REFERENCES branches(id),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -94,7 +95,23 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. Notifications Table
+-- 7. Supply Orders Table
+CREATE TABLE IF NOT EXISTS supply_orders (
+  id BIGSERIAL PRIMARY KEY,
+  date_of_supply TIMESTAMPTZ DEFAULT NOW(),
+  supplier_name TEXT NOT NULL,
+  invoice_number TEXT,
+  destination_branch_id TEXT REFERENCES branches(id),
+  items JSONB NOT NULL, -- Array of { productId, description, quantity, unitCost, vat, subtotal, total }
+  total_amount DECIMAL(10,2) NOT NULL,
+  status TEXT CHECK (status IN ('Created', 'In-Transit', 'Received', 'Cancelled')) DEFAULT 'Created',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by UUID REFERENCES profiles(id),
+  received_at TIMESTAMPTZ,
+  received_by UUID REFERENCES profiles(id)
+);
+
+-- 8. Notifications Table
 CREATE TABLE IF NOT EXISTS notifications (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -125,6 +142,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'orders') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE orders;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'supply_orders') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE supply_orders;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notifications') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
   END IF;
@@ -138,6 +158,7 @@ ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE supply_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to fix recursion in RLS
@@ -184,6 +205,9 @@ CREATE POLICY "Allow all for authenticated users" ON sales FOR ALL TO authentica
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON orders;
 CREATE POLICY "Allow all for authenticated users" ON orders FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON supply_orders;
+CREATE POLICY "Allow all for authenticated users" ON supply_orders FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- Trigger to create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()

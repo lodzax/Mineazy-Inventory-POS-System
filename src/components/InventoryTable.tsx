@@ -11,7 +11,7 @@ interface InventoryTableProps {
   onUpdate: (branchId: string, productId: string, amount: number, type: 'add' | 'remove', notes: string) => void;
   updateProduct: (id: string, updates: { price?: number, cost_price?: number, unit?: string, name?: string }) => void;
   updateThreshold: (branchId: string, productId: string, threshold: number) => void;
-  convertMercury: (branchId: string) => Promise<boolean>;
+  convertMercury: (branchId: string, type: '1kg-to-500g' | '500g-to-16.5g' | '1kg-to-30g') => Promise<boolean>;
   transferStock: (sourceBranchId: string, destBranchId: string, productId: string, amount: number, notes: string) => void;
   profile: any;
 }
@@ -125,12 +125,16 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
 
   const [isConverting, setIsConverting] = useState<string | null>(null);
 
-  const handleConvert = async (branchId: string) => {
+  const handleConvert = async (branchId: string, type: '1kg-to-500g' | '500g-to-16.5g' | '1kg-to-30g') => {
     setIsConverting(branchId);
     try {
-      const success = await convertMercury(branchId);
+      const success = await convertMercury(branchId, type);
       if (success) {
-        alert("Mercury conversion completed successfully. 1kg -> 33x30g recorded.");
+        let msg = "Mercury conversion completed successfully.";
+        if (type === '1kg-to-30g') msg = "Mercury conversion completed successfully. 1kg -> 33x30g recorded.";
+        if (type === '1kg-to-500g') msg = "Mercury conversion completed successfully. 1kg -> 2x500g recorded.";
+        if (type === '500g-to-16.5g') msg = "Mercury conversion completed successfully. 500g -> 2x16.5g recorded.";
+        alert(msg);
       }
     } finally {
       setIsConverting(null);
@@ -752,26 +756,70 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                             </button>
                           </div>
                           
-                          {/* Mercury Conversion Shortcut */}
-                          {product.id === '30g-mercury' && (profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const kgInv = inventory.find(i => i.branch_id === branch.id && i.product_id === '1kg-mercury');
-                                if (!kgInv || Number(kgInv.stock) < 1) {
-                                  alert("Cannot convert: No 1kg Mercury units available in this branch.");
-                                  return;
-                                }
-                                if (confirm("Confirm Conversion: Convert 1kg unit of Mercury into 33 units of 30g?")) {
-                                  handleConvert(branch.id);
-                                }
-                              }}
-                              disabled={isConverting === branch.id}
-                              className={`mt-3 w-full py-2.5 ${isCritical || isLow ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary/20 text-primary hover:bg-primary/30'} text-white rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 overflow-hidden`}
-                            >
-                              <ArrowRightLeft className="w-3.5 h-3.5" />
-                              {isConverting === branch.id ? 'Processing...' : 'Convert 1kg -> 33 units'}
-                            </button>
+                          {/* Mercury Conversion Shortcuts */}
+                          {(product.id === '30g-mercury' || product.id === '500g-mercury' || product.id === '16.5g-mercury') && (profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
+                            <div className="mt-4 space-y-2">
+                              {product.id === '30g-mercury' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const kgInv = inventory.find(i => i.branch_id === branch.id && i.product_id === '1kg-mercury');
+                                    if (!kgInv || Number(kgInv.stock) < 1) {
+                                      alert("Cannot convert: No 1kg Mercury units available in this branch.");
+                                      return;
+                                    }
+                                    if (confirm("Confirm Conversion: Convert 1kg unit of Mercury into 33 units of 30g?")) {
+                                      handleConvert(branch.id, '1kg-to-30g');
+                                    }
+                                  }}
+                                  disabled={isConverting === branch.id}
+                                  className={`w-full py-2.5 ${isCritical || isLow ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary/20 text-primary hover:bg-primary/30'} text-white font-bold rounded-xl text-[9px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 overflow-hidden`}
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                                  {isConverting === branch.id ? 'Processing...' : '1kg -> 33 units'}
+                                </button>
+                              )}
+                              {product.id === '500g-mercury' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const kgInv = inventory.find(i => i.branch_id === branch.id && i.product_id === '1kg-mercury');
+                                    if (!kgInv || Number(kgInv.stock) < 1) {
+                                      alert("Cannot convert: No 1kg Mercury units available in this branch.");
+                                      return;
+                                    }
+                                    if (confirm("Confirm Conversion: Convert 1kg unit of Mercury into 2 units of 500g?")) {
+                                      handleConvert(branch.id, '1kg-to-500g');
+                                    }
+                                  }}
+                                  disabled={isConverting === branch.id}
+                                  className="w-full py-2.5 bg-primary/20 text-primary hover:bg-primary/30 font-bold rounded-xl text-[9px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 overflow-hidden"
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                                  {isConverting === branch.id ? 'Processing...' : '1kg -> 2x 500g'}
+                                </button>
+                              )}
+                              {product.id === '16.5g-mercury' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const sourceInv = inventory.find(i => i.branch_id === branch.id && i.product_id === '500g-mercury');
+                                    if (!sourceInv || Number(sourceInv.stock) < 1) {
+                                      alert("Cannot convert: No 500g Mercury units available in this branch.");
+                                      return;
+                                    }
+                                    if (confirm("Confirm Conversion: Convert 500g unit of Mercury into 2 units of 16.5g?")) {
+                                      handleConvert(branch.id, '500g-to-16.5g');
+                                    }
+                                  }}
+                                  disabled={isConverting === branch.id}
+                                  className="w-full py-2.5 bg-primary/20 text-primary hover:bg-primary/30 font-bold rounded-xl text-[9px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 overflow-hidden"
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                                  {isConverting === branch.id ? 'Processing...' : '500g -> 2x 16.5g'}
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>

@@ -46,6 +46,7 @@ import OrdersHistoryTable from './components/OrdersHistoryTable';
 import POSView from './components/POSView';
 import SalesHistoryTable from './components/SalesHistoryTable';
 import BranchesView from './components/BranchesView';
+import PurchasingView from './components/PurchasingView';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -56,6 +57,7 @@ const branches = [
 ];
 
 const products = [
+  { id: '16.5g-mercury', name: '16.5g Mercury', unit: 'pcs', price: 12, cost_price: 7.57 },
   { id: '30g-mercury', name: '30g Mercury', unit: 'pcs', price: 23, cost_price: 15.15 },
   { id: '500g-mercury', name: '500g Mercury', unit: 'pcs', price: 325, cost_price: 250 },
   { id: '1kg-mercury', name: '1kg Mercury', unit: 'pcs', price: 650, cost_price: 500 },
@@ -64,7 +66,7 @@ const products = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders_history' | 'pos' | 'sales_history' | 'branches'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders_history' | 'pos' | 'sales_history' | 'branches' | 'purchasing'>('dashboard');
   const [showScanner, setShowScanner] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -82,6 +84,7 @@ export default function App() {
     products: dbProducts, 
     transactions, 
     orders, 
+    supplyOrders,
     sales,
     transfers,
     profiles,
@@ -91,6 +94,9 @@ export default function App() {
     processOrder,
     cancelOrder,
     confirmReceipt,
+    createSupplyOrder,
+    updateSupplyOrderStatus,
+    confirmSupplyReceipt,
     processSale,
     updateProduct,
     convertMercury,
@@ -117,6 +123,8 @@ export default function App() {
   useEffect(() => {
     if (profile?.role === 'Cashier' && activeTab !== 'pos') {
       setActiveTab('pos');
+    } else if (profile?.role === 'Purchasing' && activeTab !== 'purchasing') {
+      setActiveTab('purchasing');
     } else if (profile?.role === 'Supervisor' && activeTab === 'dashboard') {
       setActiveTab('inventory');
     } else if (profile?.role === 'Warehouse' && (activeTab === 'dashboard' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
@@ -142,6 +150,9 @@ export default function App() {
     setAuthError(null);
     setIsAuthenticating(true);
     try {
+      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+        throw new Error("Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Settings.");
+      }
       if (authMode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -155,7 +166,7 @@ export default function App() {
             id: authData.user.id,
             email,
             role: registrationRole,
-            branch_id: (registrationRole === 'Supervisor' || registrationRole === 'Cashier') ? (registrationBranch?.toLowerCase() || null) : null
+            branch_id: (registrationRole === 'Supervisor' || registrationRole === 'Cashier' || registrationRole === 'Manager') ? (registrationBranch?.toLowerCase() || null) : null
           });
           if (profileError) {
             console.error("Profile update failed", profileError);
@@ -297,28 +308,29 @@ export default function App() {
                     >
                       <option value="Cashier">Cashier</option>
                       <option value="Supervisor">Supervisor</option>
+                      <option value="Purchasing">Purchasing</option>
                       <option value="Warehouse">Warehouse</option>
                       <option value="Manager">Manager</option>
                       <option value="Administrator">Administrator</option>
                     </select>
                   </div>
 
-                  {(registrationRole === 'Supervisor' || registrationRole === 'Cashier') && (
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Home Branch</label>
-                      <select
-                        required
-                        value={registrationBranch}
-                        onChange={(e) => setRegistrationBranch(e.target.value)}
-                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
-                      >
-                        <option value="">Select Branch</option>
-                        {dbBranches.map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+          {(registrationRole === 'Supervisor' || registrationRole === 'Cashier' || registrationRole === 'Manager') && (
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Home Branch</label>
+              <select
+                required
+                value={registrationBranch}
+                onChange={(e) => setRegistrationBranch(e.target.value)}
+                className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+              >
+                <option value="">Select Branch</option>
+                {dbBranches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
                 </>
               )}
 
@@ -459,6 +471,15 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
+          {(profile?.role === 'Purchasing' || profile?.role === 'Warehouse' || profile?.role === 'Supervisor' || profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+            <NavItem 
+              active={activeTab === 'purchasing'} 
+              onClick={() => setActiveTab('purchasing')} 
+              icon={<ClipboardList className="w-5 h-5" />} 
+              label="Purchasing" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
           {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
             <NavItem 
               active={activeTab === 'branches'} 
@@ -582,6 +603,14 @@ export default function App() {
                     label="Order History" 
                   />
                 )}
+                {(profile?.role === 'Purchasing' || profile?.role === 'Warehouse' || profile?.role === 'Supervisor' || profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                  <NavItem 
+                    active={activeTab === 'purchasing'} 
+                    onClick={() => { setActiveTab('purchasing'); setIsSidebarOpen(false); }} 
+                    icon={<ClipboardList className="w-5 h-5" />} 
+                    label="Purchasing" 
+                  />
+                )}
                 {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
                   <NavItem 
                     active={activeTab === 'branches'} 
@@ -617,8 +646,9 @@ export default function App() {
               {activeTab === 'dashboard' ? 'Business Intelligence' : 
                activeTab === 'inventory' ? 'Inventory Grid' : 
                activeTab === 'pos' ? 'Direct checkout' :
-               activeTab === 'sales_history' ? 'Transaction archive' :
+               activeTab === 'sales_history' ? 'Sales Records' :
                activeTab === 'branches' ? 'Network Hub' :
+               activeTab === 'purchasing' ? 'Procurement Center' :
                activeTab === 'orders_history' ? 'Order Archive' : 'System Logs'}
             </h2>
             <p className="text-xs font-mono text-ink/40 uppercase tracking-widest font-bold">
@@ -627,6 +657,7 @@ export default function App() {
                activeTab === 'pos' ? 'Front-facing sales interface with instant receipt generation' :
                activeTab === 'sales_history' ? 'Audited log of every point-of-sale transaction' :
                activeTab === 'branches' ? 'Command center for all operational locations' :
+               activeTab === 'purchasing' ? 'Supply order lifecycle and supplier management' :
                activeTab === 'orders_history' ? 'Retrospective on fulfillment and warehouse demand' : 'Raw event logs for security and auditing'}
             </p>
           </div>
@@ -719,7 +750,7 @@ export default function App() {
                         type="number"
                         required
                         step="0.01"
-                        value={newProductPrice}
+                        value={isNaN(parseFloat(newProductPrice)) ? '' : newProductPrice}
                         onChange={(e) => setNewProductPrice(e.target.value)}
                         className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
                         placeholder="0.00"
@@ -731,7 +762,7 @@ export default function App() {
                         type="number"
                         required
                         step="0.01"
-                        value={newProductCost}
+                        value={isNaN(parseFloat(newProductCost)) ? '' : newProductCost}
                         onChange={(e) => setNewProductCost(e.target.value)}
                         className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
                         placeholder="0.00"
@@ -784,6 +815,17 @@ export default function App() {
                   sales={sales}
                 />
               )}
+              {activeTab === 'purchasing' && (
+                <PurchasingView
+                  supplyOrders={supplyOrders}
+                  branches={dbBranches}
+                  products={dbProducts}
+                  createSupplyOrder={createSupplyOrder}
+                  updateSupplyOrderStatus={updateSupplyOrderStatus}
+                  confirmSupplyReceipt={confirmSupplyReceipt}
+                  profile={profile}
+                />
+              )}
               {activeTab === 'inventory' && (
                 <InventoryTable 
                   inventory={inventory} 
@@ -798,7 +840,7 @@ export default function App() {
                 />
               )}
               {activeTab === 'history' && (
-                <HistoryTable transactions={transactions} branches={dbBranches} products={dbProducts} />
+                <HistoryTable transactions={transactions} branches={dbBranches} products={dbProducts} profile={profile} />
               )}
               {activeTab === 'pos' && profile?.role !== 'Warehouse' && (
                 <POSView 
@@ -815,6 +857,7 @@ export default function App() {
                   sales={sales}
                   branches={dbBranches}
                   products={dbProducts}
+                  profile={profile}
                 />
               )}
               {activeTab === 'orders_history' && (
@@ -882,7 +925,7 @@ function NavItem({ active, onClick, icon, label, collapsed }: { active: boolean,
   );
 }
 
-function HistoryTable({ transactions, branches, products }: { transactions: any[], branches: any[], products: any[] }) {
+function HistoryTable({ transactions, branches, products, profile }: { transactions: any[], branches: any[], products: any[], profile: any }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [filterBranch, setFilterBranch] = useState<string>('all');
   const [filterProduct, setFilterProduct] = useState<string>('all');
@@ -891,8 +934,14 @@ function HistoryTable({ transactions, branches, products }: { transactions: any[
   
   const itemsPerPage = 15;
 
+  const isAdmin = profile?.role === 'Administrator';
+  const userBranchId = profile?.branch_id;
+
   // Filter logic
   const filtered = transactions.filter(tx => {
+    // Branch boundary check
+    if (!isAdmin && tx.branch_id !== userBranchId) return false;
+
     if (filterBranch !== 'all' && tx.branch_id !== filterBranch) return false;
     if (filterProduct !== 'all' && tx.product_id !== filterProduct) return false;
     if (filterType !== 'all' && tx.type !== filterType) return false;
@@ -969,22 +1018,24 @@ function HistoryTable({ transactions, branches, products }: { transactions: any[
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By Node</label>
-            <div className="relative">
-              <select 
-                value={filterBranch}
-                onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
-                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
-              >
-                <option value="all">All Branches</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+          {isAdmin && (
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By Node</label>
+              <div className="relative">
+                <select 
+                  value={filterBranch}
+                  onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
+                  className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
+                >
+                  <option value="all">All Branches</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By Resource</label>

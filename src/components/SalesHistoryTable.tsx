@@ -9,9 +9,10 @@ interface SalesHistoryTableProps {
   sales: any[];
   branches: any[];
   products: any[];
+  profile: any;
 }
 
-export default function SalesHistoryTable({ sales, branches, products }: SalesHistoryTableProps) {
+export default function SalesHistoryTable({ sales, branches, products, profile }: SalesHistoryTableProps) {
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('all');
   const [productFilter, setProductFilter] = useState('all');
@@ -21,6 +22,9 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
   const itemsPerPage = 15;
 
   const [selectedSale, setSelectedSale] = useState<any | null>(null);
+
+  const isAdmin = profile?.role === 'Administrator';
+  const userBranchId = profile?.branch_id;
 
   const handlePrintReceipt = (sale: any) => {
     setSelectedSale(sale);
@@ -33,6 +37,11 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
   };
 
   const filteredSales = sales.filter(sale => {
+    // Branch boundary check: only Admins see all, others only their branch
+    if (!isAdmin && sale.branch_id !== userBranchId) {
+      return false;
+    }
+
     const branch = branches.find(b => b.id === sale.branch_id);
     const saleDate = sale.timestamp ? new Date(sale.timestamp) : null;
     
@@ -188,27 +197,43 @@ export default function SalesHistoryTable({ sales, branches, products }: SalesHi
           </div>
         </div>
 
-        <div className="lg:col-span-3 space-y-3">
-          <label className="text-[10px] font-mono font-black text-ink/30 uppercase tracking-[0.2em] ml-1">Contextual Filters</label>
-          <div className="flex gap-3">
-            <select 
-              value={branchFilter}
-              onChange={(e) => { setBranchFilter(e.target.value); setCurrentPage(1); }}
-              className="flex-1 px-4 py-4 bg-white border border-ink/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-ink focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01] appearance-none cursor-pointer"
-            >
-              <option value="all">Global Matrix</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-            </select>
+        {isAdmin && (
+          <div className="lg:col-span-3 space-y-3 font-mono">
+            <label className="text-[10px] font-mono font-black text-ink/30 uppercase tracking-[0.2em] ml-1">Contextual Filters</label>
+            <div className="flex gap-3">
+              <select 
+                value={branchFilter}
+                onChange={(e) => { setBranchFilter(e.target.value); setCurrentPage(1); }}
+                className="flex-1 px-4 py-4 bg-white border border-ink/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-ink focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01] appearance-none cursor-pointer"
+              >
+                <option value="all">Global Matrix</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+              </select>
+              <select 
+                value={productFilter}
+                onChange={(e) => { setProductFilter(e.target.value); setCurrentPage(1); }}
+                className="flex-1 px-4 py-4 bg-white border border-ink/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-ink focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01] appearance-none cursor-pointer"
+              >
+                <option value="all">Every Artifact</option>
+                {products.map(p => <option key={p.id} value={p.id}>{p.name.toUpperCase()}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {!isAdmin && (
+          <div className="lg:col-span-3 space-y-3 font-mono">
+            <label className="text-[10px] font-mono font-black text-ink/30 uppercase tracking-[0.2em] ml-1">Contextual Filters</label>
             <select 
               value={productFilter}
               onChange={(e) => { setProductFilter(e.target.value); setCurrentPage(1); }}
-              className="flex-1 px-4 py-4 bg-white border border-ink/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-ink focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01] appearance-none cursor-pointer"
+              className="w-full px-4 py-4 bg-white border border-ink/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-ink focus:ring-4 focus:ring-primary/5 transition-all shadow-xl shadow-ink/[0.01] appearance-none cursor-pointer"
             >
               <option value="all">Every Artifact</option>
               {products.map(p => <option key={p.id} value={p.id}>{p.name.toUpperCase()}</option>)}
             </select>
           </div>
-        </div>
+        )}
 
         <div className="lg:col-span-3 flex gap-3">
           <button 
