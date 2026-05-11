@@ -12,9 +12,17 @@ import {
   Calculator,
   User,
   AlertCircle,
-  CircleGauge
+  CircleGauge,
+  Search,
+  Filter,
+  XCircle,
+  Download,
+  Eye,
+  X as XIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface PurchasingViewProps {
   supplyOrders: any[];
@@ -37,13 +45,95 @@ export default function PurchasingView({
 }: PurchasingViewProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<any | null>(null);
   
+  // Filter State
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [supplierFilter, setSupplierFilter] = useState('');
+  const [invoiceFilter, setInvoiceFilter] = useState('');
+  const [destinationFilter, setDestinationFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
+
   // Create Order Form State
   const [supplierName, setSupplierName] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [destinationBranch, setDestinationBranch] = useState('');
   const [dateOfSupply, setDateOfSupply] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState<any[]>([{ productId: '', description: '', quantity: 1, unitCost: 0, vat: 15 }]);
+
+  const filteredOrders = supplyOrders.filter(order => {
+    if (statusFilter !== 'all' && order.status !== statusFilter) return false;
+    if (supplierFilter && !order.supplier_name.toLowerCase().includes(supplierFilter.toLowerCase())) return false;
+    if (invoiceFilter && !order.invoice_number?.toLowerCase().includes(invoiceFilter.toLowerCase())) return false;
+    if (destinationFilter !== 'all' && order.destination_branch_id !== destinationFilter) return false;
+    if (dateFilter && !order.date_of_supply.startsWith(dateFilter)) return false;
+    return true;
+  });
+
+  const generatePDF = (order: any) => {
+    const doc = new jsPDF();
+    const branchName = branches.find(b => b.id === order.destination_branch_id)?.name || order.destination_branch_id;
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(20, 20, 20);
+    doc.text('SUPPLY ORDER MANIFEST', 105, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Order ID: #${String(order.id).slice(-12)}`, 105, 28, { align: 'center' });
+    
+    // Business Info
+    doc.setDrawColor(230, 230, 230);
+    doc.line(20, 35, 190, 35);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Supplier Detail:', 20, 45);
+    doc.setFont('helvetica', 'bold');
+    doc.text(order.supplier_name, 20, 50);
+    doc.setFont('helvetica', 'normal');
+    if (order.invoice_number) doc.text(`Invoice: ${order.invoice_number}`, 20, 55);
+    
+    doc.text('Receiving Node:', 120, 45);
+    doc.setFont('helvetica', 'bold');
+    doc.text(branchName, 120, 50);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Supply Date: ${new Date(order.date_of_supply).toLocaleDateString()}`, 120, 55);
+    doc.text(`Status: ${order.status}`, 120, 60);
+
+    // Table
+    const tableRows = order.items.map((item: any) => [
+      item.description,
+      item.quantity,
+      `$${Number(item.unitCost).toFixed(2)}`,
+      `${item.vat}%`,
+      `$${Number(item.total).toFixed(2)}`
+    ]);
+
+    autoTable(doc, {
+      startY: 70,
+      head: [['Description', 'Qty', 'Unit Cost', 'VAT', 'Total']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 30, 30], textColor: [255, 255, 255] },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      margin: { left: 20, right: 20 }
+    });
+
+    // Summary
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Total Amount: $${order.total_amount.toFixed(2)}`, 190, finalY, { align: 'right' });
+    
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Generated on ${new Date().toLocaleString()}`, 20, 280);
+    
+    doc.save(`SupplyOrder_${String(order.id).slice(-6)}.pdf`);
+  };
 
   const addItem = () => {
     setItems([...items, { productId: '', description: '', quantity: 1, unitCost: 0, vat: 15 }]);
@@ -139,14 +229,118 @@ export default function PurchasingView({
         ) : null}
       </div>
 
+      {/* Filter Bar */}
+      <div className="bg-white p-8 rounded-[2rem] border border-ink/5 shadow-sm space-y-6">
+        <div className="flex items-center gap-3 border-b border-ink/5 pb-4">
+          <Filter className="w-4 h-4 text-primary" />
+          <h4 className="text-[10px] font-mono font-black uppercase text-ink/40 tracking-widest">Contextual Filtering</h4>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-mono uppercase text-ink/30 font-black ml-1">Order Status</label>
+            <select 
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full p-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold text-xs appearance-none cursor-pointer"
+            >
+              <option value="all">Every State</option>
+              <option value="Created">Created</option>
+              <option value="In-Transit">In-Transit</option>
+              <option value="Received">Received</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-mono uppercase text-ink/30 font-black ml-1">Supplier Archive</label>
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink/20" />
+              <input 
+                type="text"
+                placeholder="Search Vendors..."
+                value={supplierFilter}
+                onChange={(e) => setSupplierFilter(e.target.value)}
+                className="w-full pl-10 pr-4 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-mono uppercase text-ink/30 font-black ml-1">Invoice ID</label>
+            <div className="relative">
+              <Receipt className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink/20" />
+              <input 
+                type="text"
+                placeholder="Lookup Manifest..."
+                value={invoiceFilter}
+                onChange={(e) => setInvoiceFilter(e.target.value)}
+                className="w-full pl-10 pr-4 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-mono uppercase text-ink/30 font-black ml-1">Destination Node</label>
+            <select 
+              value={destinationFilter}
+              onChange={(e) => setDestinationFilter(e.target.value)}
+              className="w-full p-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold text-xs appearance-none cursor-pointer"
+            >
+              <option value="all">Universal Grid</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-mono uppercase text-ink/30 font-black ml-1">Supply Timeline</label>
+            <div className="relative">
+              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/20" />
+              <input 
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full pl-11 pr-4 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs cursor-pointer"
+              />
+              {dateFilter && (
+                <button 
+                  onClick={() => setDateFilter('')}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-ink/20 hover:text-primary transition-colors"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {(statusFilter !== 'all' || supplierFilter || invoiceFilter || destinationFilter !== 'all' || dateFilter) && (
+          <div className="flex justify-end">
+            <button 
+              onClick={() => {
+                setStatusFilter('all');
+                setSupplierFilter('');
+                setInvoiceFilter('');
+                setDestinationFilter('all');
+                setDateFilter('');
+              }}
+              className="px-4 py-2 text-[8px] font-mono font-black uppercase text-primary border border-primary/20 rounded-lg hover:bg-primary/5 transition-all flex items-center gap-2"
+            >
+              <XCircle className="w-3 h-3" />
+              Reset All Filters
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="grid gap-6">
-        {supplyOrders.length === 0 ? (
+        {filteredOrders.length === 0 ? (
           <div className="bg-white p-16 rounded-[2.5rem] border border-ink/5 text-center">
             <Package className="w-12 h-12 text-ink/10 mx-auto mb-4" />
-            <p className="text-ink/40 font-mono text-xs uppercase tracking-widest">No supply orders found</p>
+            <p className="text-ink/40 font-mono text-xs uppercase tracking-widest">No matching supply orders found</p>
           </div>
         ) : (
-          supplyOrders.map((order) => (
+          filteredOrders.map((order) => (
             <motion.div 
               layout
               key={order.id}
@@ -227,14 +421,30 @@ export default function PurchasingView({
                     <p className="text-4xl font-serif text-ink">${order.total_amount?.toFixed(2)}</p>
                   </div>
 
-                  <div className="space-y-3 w-full">
+                  <div className="flex flex-wrap lg:flex-nowrap gap-3 w-full justify-end">
+                    <button 
+                      onClick={() => setSelectedOrderDetail(order)}
+                      className="p-3 bg-ink/5 text-ink hover:bg-ink hover:text-white rounded-xl transition-all"
+                      title="View Details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    
+                    <button 
+                      onClick={() => generatePDF(order)}
+                      className="p-3 bg-primary/5 text-primary hover:bg-primary hover:text-white rounded-xl transition-all"
+                      title="Export PDF"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+
                     {order.status === 'Created' && (profile?.role === 'Purchasing' || profile?.role === 'Administrator' || profile?.role === 'Manager') && (
                       <button 
                         onClick={() => updateSupplyOrderStatus(order.id, 'In-Transit')}
-                        className="w-full py-3 bg-amber-500 text-white rounded-xl text-[10px] uppercase font-black tracking-widest hover:bg-amber-600 transition-all flex items-center justify-center gap-2"
+                        className="px-6 py-3 bg-amber-500 text-white rounded-xl text-[10px] uppercase font-black tracking-widest hover:bg-amber-600 transition-all flex items-center justify-center gap-2"
                       >
                         <Truck className="w-4 h-4" />
-                        Mark In-Transit
+                        In-Transit
                       </button>
                     )}
 
@@ -245,32 +455,32 @@ export default function PurchasingView({
                             confirmSupplyReceipt(order.id);
                           }
                         }}
-                        className="w-full py-3 bg-emerald-500 text-white rounded-xl text-[10px] uppercase font-black tracking-widest hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                        className="px-6 py-3 bg-emerald-500 text-white rounded-xl text-[10px] uppercase font-black tracking-widest hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        Confirm Receipt
+                        Received
                       </button>
-                    )}
-
-                    {order.status === 'Received' && (
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-mono text-emerald-600 font-bold uppercase py-2 bg-emerald-50 rounded-lg text-center flex items-center justify-center gap-2">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Inventory Updated
-                        </p>
-                        <p className="text-[8px] font-mono text-ink/30 italic">Received on {new Date(order.received_at).toLocaleString()}</p>
-                      </div>
                     )}
 
                     {order.status === 'Created' && (
                       <button 
                         onClick={() => updateSupplyOrderStatus(order.id, 'Cancelled')}
-                        className="w-full py-3 border-2 border-danger/20 text-danger hover:bg-danger/5 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all"
+                        className="px-6 py-3 border-2 border-danger/20 text-danger hover:bg-danger/5 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all"
                       >
-                        Cancel Order
+                        Cancel
                       </button>
                     )}
                   </div>
+
+                  {order.status === 'Received' && (
+                    <div className="space-y-1 w-full">
+                      <p className="text-[10px] font-mono text-emerald-600 font-bold uppercase py-2 bg-emerald-50 rounded-lg text-center flex items-center justify-center gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Inventory Updated
+                      </p>
+                      <p className="text-[8px] font-mono text-ink/30 italic">Received on {new Date(order.received_at).toLocaleString()}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -279,6 +489,96 @@ export default function PurchasingView({
       </div>
 
       <AnimatePresence>
+        {selectedOrderDetail && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 backdrop-blur-md p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-[3rem] w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-white/20"
+            >
+              <div className="p-8 border-b border-ink/5 bg-ink text-white flex justify-between items-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 blur-[100px] -mr-32 -mt-32 rounded-full" />
+                <div className="relative z-10">
+                  <h3 className="text-2xl font-serif">Order Manifest</h3>
+                  <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest font-black">#{String(selectedOrderDetail.id).slice(-12)}</p>
+                </div>
+                <button onClick={() => setSelectedOrderDetail(null)} className="relative z-10 p-2 hover:bg-white/10 rounded-full transition-colors"><XIcon className="w-6 h-6" /></button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-10 bg-background/50 space-y-8">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+                  <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-sm space-y-1">
+                    <p className="text-[8px] font-mono uppercase text-ink/30 font-black tracking-[0.2em]">Supplier</p>
+                    <p className="font-serif text-xl">{selectedOrderDetail.supplier_name}</p>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-sm space-y-1">
+                    <p className="text-[8px] font-mono uppercase text-ink/30 font-black tracking-[0.2em]">Invoice ID</p>
+                    <p className="font-mono text-lg">{selectedOrderDetail.invoice_number || 'N/A'}</p>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-sm space-y-1">
+                    <p className="text-[8px] font-mono uppercase text-ink/30 font-black tracking-[0.2em]">Destination</p>
+                    <p className="font-bold">{branches.find(b => b.id === selectedOrderDetail.destination_branch_id)?.name || selectedOrderDetail.destination_branch_id}</p>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-sm space-y-1">
+                    <p className="text-[8px] font-mono uppercase text-ink/30 font-black tracking-[0.2em]">Supply Date</p>
+                    <p className="font-bold">{new Date(selectedOrderDetail.date_of_supply).toLocaleDateString()}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-sm">
+                  <table className="w-full text-[11px] font-mono">
+                    <thead>
+                      <tr className="bg-ink text-white uppercase tracking-widest">
+                        <th className="py-4 px-6 text-left">Description</th>
+                        <th className="py-4 px-6 text-center">Qty</th>
+                        <th className="py-4 px-6 text-center">Unit Cost</th>
+                        <th className="py-4 px-6 text-center">VAT</th>
+                        <th className="py-4 px-6 text-right">Line Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ink/5">
+                      {selectedOrderDetail.items.map((item: any, i: number) => (
+                        <tr key={i} className="hover:bg-primary/5 transition-colors">
+                          <td className="py-4 px-6">
+                            <p className="font-bold">{item.description}</p>
+                            {item.productId && <p className="text-[9px] opacity-40">{item.productId}</p>}
+                          </td>
+                          <td className="py-4 px-6 text-center font-black">{item.quantity}</td>
+                          <td className="py-4 px-6 text-center text-ink/40">${Number(item.unitCost).toFixed(2)}</td>
+                          <td className="py-4 px-6 text-center text-ink/40">{item.vat}%</td>
+                          <td className="py-4 px-6 text-right font-black font-serif text-lg">${Number(item.total).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-end gap-10 items-center">
+                  <div className="text-right space-y-2">
+                    <p className="text-[10px] font-mono uppercase text-ink/30 font-black tracking-[0.2em]">Final Valuation</p>
+                    <p className="text-5xl font-serif text-ink">${selectedOrderDetail.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-8 bg-ink border-t border-white/5 flex justify-end gap-4">
+                <button 
+                  onClick={() => generatePDF(selectedOrderDetail)}
+                  className="px-8 py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-primary/20"
+                >
+                  <Download className="w-4 h-4" />
+                  Request PDF Artifact
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {showCreateModal && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -297,7 +597,7 @@ export default function PurchasingView({
                   <h3 className="text-3xl font-serif">Create Supply Order</h3>
                   <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest font-black">Procurement Manifest Generation</p>
                 </div>
-                <button onClick={() => setShowCreateModal(false)} className="relative z-10 p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-6 h-6" /></button>
+                <button onClick={() => setShowCreateModal(false)} className="relative z-10 p-2 hover:bg-white/10 rounded-full transition-colors"><XIcon className="w-6 h-6" /></button>
               </div>
 
               <form onSubmit={handleSubmitOrder} className="flex-1 overflow-y-auto bg-background/50 custom-scrollbar">
@@ -316,14 +616,18 @@ export default function PurchasingView({
                         <label className="text-[9px] font-mono uppercase text-ink/40 font-black ml-1">Supplier Name</label>
                         <div className="relative group">
                           <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/20 group-focus-within:text-primary transition-colors" />
-                          <input 
-                            required
-                            type="text"
-                            value={supplierName}
-                            onChange={(e) => setSupplierName(e.target.value)}
-                            className="w-full pl-11 pr-4 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold placeholder:font-normal placeholder:text-ink/20"
-                            placeholder="Supplier or Entity"
-                          />
+                        <select 
+                          required
+                          value={supplierName}
+                          onChange={(e) => setSupplierName(e.target.value)}
+                          className="w-full pl-11 pr-4 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold appearance-none cursor-pointer"
+                        >
+                          <option value="">Select Supplier</option>
+                          <option value="Vendors Paradise">Vendors Paradise</option>
+                          <option value="Midlands Beaters">Midlands Beaters</option>
+                          <option value="Parts Investments">Parts Investments</option>
+                          <option value="Zhezhiang Mining Well">Zhezhiang Mining Well</option>
+                        </select>
                         </div>
                       </div>
 
