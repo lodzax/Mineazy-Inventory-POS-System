@@ -21,13 +21,57 @@ function handleSupabaseError(error: any, operationType: OperationType, path: str
     message = "Network Error: Failed to fetch. Please verify your Supabase URL and network connection.";
   }
   
+  // Map specific postgres errors if needed
+  if (error?.code === 'PGRST116') {
+    message = "Record not found.";
+  }
+  
   const errInfo = {
     error: message,
     operationType,
-    path
+    path,
+    code: error?.code
   };
   console.error('Supabase Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  
+  // Return the friendly message instead of throwing stringified JSON if we want components to easily handle it
+  // But for this app's architecture, we might want to keep the throw to trigger the error state
+  throw new Error(message); 
+}
+
+/**
+ * Helper to perform a Supabase query with built-in retry logic for handleable errors
+ */
+async function retryableRequest<T>(
+  requestFn: () => Promise<{ data: T | null; error: any }>,
+  retries = 3,
+  delay = 1000
+): Promise<{ data: T | null; error: any }> {
+  try {
+    const result = await requestFn();
+    if (result.error) {
+      // Only retry on network-like errors or temporary server errors
+      const isRetryable = 
+        result.error.message === 'Failed to fetch' || 
+        result.error.code === '502' || 
+        result.error.code === '503' ||
+        result.error.code === '504';
+        
+      if (isRetryable && retries > 0) {
+        console.warn(`[retryableRequest] Request failed, retrying in ${delay}ms... (${retries} left)`, result.error.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return retryableRequest(requestFn, retries - 1, delay * 1.5);
+      }
+    }
+    return result;
+  } catch (err: any) {
+    if ((err.message === 'Failed to fetch' || err.message?.includes('timeout')) && retries > 0) {
+      console.warn(`[retryableRequest] Exception caught, retrying in ${delay}ms... (${retries} left)`, err.message);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return retryableRequest(requestFn, retries - 1, delay * 1.5);
+    }
+    throw err;
+  }
 }
 
 export function useInventory() {
@@ -65,9 +109,15 @@ export function useInventory() {
 
     const initializeAuth = async () => {
       try {
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Auth session timeout")), 15000));
-        const sessionPromise = supabase.auth.getSession();
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Security handshake timeout")), 20000));
+        
+        // Wrap getSession in retryableRequest
+        const { data: { session }, error } = await Promise.race([
+          retryableRequest(() => supabase.auth.getSession()),
+          timeoutPromise
+        ]) as any;
+        
+        if (error) throw error;
         
         if (mounted) {
           const sessionUser = session?.user ?? null;
@@ -80,9 +130,11 @@ export function useInventory() {
       } catch (err: any) {
         console.error("[initializeAuth] Failed:", err);
         if (mounted) {
-          if (err?.message === "Failed to fetch") {
-            setError("Connection Error: Failed to initialize security session. Please check your Supabase configuration.");
+          let msg = err?.message || String(err);
+          if (msg === "Failed to fetch") {
+            msg = "Connection Refused: Shared infrastructure is unreachable. Please reload.";
           }
+          setError(msg);
           setAuthLoading(false);
           setLoading(false);
         }
@@ -104,7 +156,7 @@ export function useInventory() {
           // Initial branches fetch for login screen - with timeout
           try {
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Initial branches timeout")), 30000));
-            const fetchPromise = supabase.from('branches').select('*');
+            const fetchPromise = retryableRequest(() => supabase.from('branches').select('*') as any);
             const { data: bData } = await Promise.race([fetchPromise, timeoutPromise]) as any;
             if (bData && mounted) setData(prev => ({ ...prev, branches: bData || [] }));
           } catch (err) {
@@ -213,38 +265,54 @@ export function useInventory() {
       const isLimited = activeProfile.role === 'Supervisor' || activeProfile.role === 'Cashier';
       const userBranch = activeProfile.branch_id;
 
-      // ... existing query setups ...
-      let bQuery = supabase.from('branches').select('*');
-      let pQuery = supabase.from('products').select('*');
-      let iQuery = supabase.from('inventory').select('*');
-      let tQuery = supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500);
-      let oQuery = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
-      let soQuery = supabase.from('supply_orders').select('*').order('created_at', { ascending: false }).limit(100);
-      let sQuery = supabase.from('sales').select('*').order('timestamp', { ascending: false }).limit(100);
-      let pAllQuery = supabase.from('profiles').select('id, email, role');
-
-      if (isLimited && userBranch) {
-        const normalizedBranch = userBranch.toLowerCase();
-        bQuery = bQuery.eq('id', normalizedBranch);
-        iQuery = iQuery.eq('branch_id', normalizedBranch);
-        tQuery = tQuery.eq('branch_id', normalizedBranch);
-        oQuery = oQuery.eq('branch_id', normalizedBranch);
-        soQuery = soQuery.eq('destination_branch_id', normalizedBranch);
-        sQuery = sQuery.eq('branch_id', normalizedBranch);
-      }
-
       console.log("[fetchData] Executing queries...");
-      const timeoutSec = 45;
+      const timeoutSec = 60; // Increased global timeout
+      
+      // We will fetch important pieces one by one or in smaller groups to prevent overloading
+      const fetchWithResilience = async () => {
+        const results = await Promise.all([
+          retryableRequest(() => {
+            let q = supabase.from('branches').select('*');
+            if (isLimited && userBranch) q = q.eq('id', userBranch.toLowerCase());
+            return q as any;
+          }),
+          retryableRequest(() => supabase.from('products').select('*') as any),
+          retryableRequest(() => {
+            let q = supabase.from('inventory').select('*');
+            if (isLimited && userBranch) q = q.eq('branch_id', userBranch.toLowerCase());
+            return q as any;
+          }),
+          retryableRequest(() => {
+            let q = supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500);
+            if (isLimited && userBranch) q = q.eq('branch_id', userBranch.toLowerCase());
+            return q as any;
+          }),
+          retryableRequest(() => {
+            let q = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(100);
+            if (isLimited && userBranch) q = q.eq('branch_id', userBranch.toLowerCase());
+            return q as any;
+          }),
+          retryableRequest(() => {
+            let q = supabase.from('supply_orders').select('*').order('created_at', { ascending: false }).limit(100);
+            if (isLimited && userBranch) q = q.eq('destination_branch_id', userBranch.toLowerCase());
+            return q as any;
+          }),
+          retryableRequest(() => {
+            let q = supabase.from('sales').select('*').order('timestamp', { ascending: false }).limit(100);
+            if (isLimited && userBranch) q = q.eq('branch_id', userBranch.toLowerCase());
+            return q as any;
+          }),
+          retryableRequest(() => supabase.from('profiles').select('id, email, role') as any)
+        ]);
+        return results;
+      };
+
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error(`Global data fetch timed out after ${timeoutSec}s`)), timeoutSec * 1000)
       );
-
-      // Perform queries one by one or in smaller chunks if parallel is struggling
-      // For now, let's stick to Promise.all but with a better timeout and logging
-      const queriesPromises = Promise.all([bQuery, pQuery, iQuery, tQuery, oQuery, soQuery, sQuery, pAllQuery]);
       
       const results = await Promise.race([
-        queriesPromises,
+        fetchWithResilience(),
         timeoutPromise
       ]) as any;
 
@@ -260,7 +328,11 @@ export function useInventory() {
       ] = results;
 
       if (bErr || pErr || iErr || tErr || oErr || soErr || sErr || prErr) {
-        console.warn("[fetchData] One or more queries failed:", { bErr, pErr, iErr, tErr, oErr, soErr, sErr, prErr });
+        console.warn("[fetchData] Some queries failed even after retries.", { bErr, pErr, iErr, tErr, oErr, soErr, sErr, prErr });
+        // We still proceed if we have at least branches and products as they are critical
+        if (bErr || pErr) {
+          throw bErr || pErr;
+        }
       }
 
       setData({

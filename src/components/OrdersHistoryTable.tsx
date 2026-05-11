@@ -82,7 +82,14 @@ export default function OrdersHistoryTable({
   const isAdmin = profile?.role?.toLowerCase() === 'administrator' || 
                   profile?.role?.toLowerCase() === 'manager';
 
+  const isLimitedRole = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
+
   const filteredOrders = orders.filter(order => {
+    // Branch boundary check: Supervisors and Cashiers only see their own branch
+    if (isLimitedRole && profile?.branch_id && order.branch_id !== profile.branch_id) {
+      return false;
+    }
+
     const branch = branches.find(b => b.id === order.branch_id);
     const matchesSearch = branch?.name.toLowerCase().includes(search.toLowerCase()) || 
                           order.id.toString().toLowerCase().includes(search.toLowerCase());
@@ -264,22 +271,24 @@ export default function OrdersHistoryTable({
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By node</label>
-            <div className="relative">
-              <select 
-                value={branchFilter}
-                onChange={(e) => { setBranchFilter(e.target.value); setCurrentPage(1); }}
-                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
-              >
-                <option value="all">All Branches</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+          {isAdmin && (
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By node</label>
+              <div className="relative">
+                <select 
+                  value={branchFilter}
+                  onChange={(e) => { setBranchFilter(e.target.value); setCurrentPage(1); }}
+                  className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
+                >
+                  <option value="all">All Branches</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Protocol Status</label>
@@ -744,9 +753,12 @@ export default function OrdersHistoryTable({
                     className="w-full pl-12 pr-8 py-5 bg-background border border-ink/5 rounded-2xl text-xs font-mono font-black uppercase tracking-widest focus:ring-4 focus:ring-primary/5 transition-all outline-none appearance-none"
                   >
                     <option value="">SELECT DESTINATION</option>
-                    {branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>
-                    ))}
+                    {branches
+                      .filter(b => !isLimitedRole || b.id === profile?.branch_id)
+                      .map(b => (
+                        <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>
+                      ))
+                    }
                   </select>
                   <Building2 className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
                 </div>

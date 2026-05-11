@@ -125,10 +125,15 @@ export default function App() {
       setActiveTab('pos');
     } else if (profile?.role === 'Purchasing' && activeTab !== 'purchasing') {
       setActiveTab('purchasing');
-    } else if (profile?.role === 'Supervisor' && activeTab === 'dashboard') {
-      setActiveTab('inventory');
-    } else if (profile?.role === 'Warehouse' && (activeTab === 'dashboard' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
-      setActiveTab('orders_history');
+    } else if ((profile?.role === 'Supervisor' || profile?.role === 'Warehouse') && (activeTab === 'dashboard' || activeTab === 'inventory' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
+      // If Supervisor or Warehouse, dashboard and inventory are no longer accessible
+      if (profile?.role === 'Supervisor') {
+        if (activeTab !== 'pos' && activeTab !== 'orders_history' && activeTab !== 'sales_history') {
+           setActiveTab('pos');
+        }
+      } else {
+        setActiveTab('orders_history');
+      }
     }
   }, [profile, activeTab]);
 
@@ -426,7 +431,7 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
-          {(profile?.role !== 'Cashier') && (
+          {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
             <NavItem 
               active={activeTab === 'inventory'} 
               onClick={() => setActiveTab('inventory')} 
@@ -471,7 +476,7 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
-          {(profile?.role === 'Purchasing' || profile?.role === 'Warehouse' || profile?.role === 'Supervisor' || profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+          {(profile?.role === 'Purchasing' || profile?.role === 'Administrator' || profile?.role === 'Manager') && (
             <NavItem 
               active={activeTab === 'purchasing'} 
               onClick={() => setActiveTab('purchasing')} 
@@ -563,7 +568,7 @@ export default function App() {
                     label="Reports" 
                   />
                 )}
-                {(profile?.role !== 'Cashier') && (
+                {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
                   <NavItem 
                     active={activeTab === 'inventory'} 
                     onClick={() => { setActiveTab('inventory'); setIsSidebarOpen(false); }} 
@@ -603,7 +608,7 @@ export default function App() {
                     label="Order History" 
                   />
                 )}
-                {(profile?.role === 'Purchasing' || profile?.role === 'Warehouse' || profile?.role === 'Supervisor' || profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                {(profile?.role === 'Purchasing' || profile?.role === 'Administrator' || profile?.role === 'Manager') && (
                   <NavItem 
                     active={activeTab === 'purchasing'} 
                     onClick={() => { setActiveTab('purchasing'); setIsSidebarOpen(false); }} 
