@@ -47,6 +47,7 @@ import POSView from './components/POSView';
 import SalesHistoryTable from './components/SalesHistoryTable';
 import BranchesView from './components/BranchesView';
 import PurchasingView from './components/PurchasingView';
+import BackupSettings from './components/BackupSettings';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -66,7 +67,7 @@ const products = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders_history' | 'pos' | 'sales_history' | 'branches' | 'purchasing'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'history' | 'orders_history' | 'pos' | 'sales_history' | 'branches' | 'purchasing' | 'settings'>('dashboard');
   const [showScanner, setShowScanner] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -494,6 +495,15 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
+          {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+            <NavItem 
+              active={activeTab === 'settings'} 
+              onClick={() => setActiveTab('settings')} 
+              icon={<Settings className="w-5 h-5" />} 
+              label="Settings" 
+              collapsed={isSidebarCollapsed}
+            />
+          )}
           <NavItem 
             active={false} 
             onClick={() => setShowScanner(true)} 
@@ -624,6 +634,14 @@ export default function App() {
                     label="Branches" 
                   />
                 )}
+                {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                  <NavItem 
+                    active={activeTab === 'settings'} 
+                    onClick={() => { setActiveTab('settings'); setIsSidebarOpen(false); }} 
+                    icon={<Settings className="w-5 h-5" />} 
+                    label="Settings" 
+                  />
+                )}
                 <NavItem 
                   active={false} 
                   onClick={() => { setShowScanner(true); setIsSidebarOpen(false); }} 
@@ -654,6 +672,7 @@ export default function App() {
                activeTab === 'sales_history' ? 'Sales Records' :
                activeTab === 'branches' ? 'Network Hub' :
                activeTab === 'purchasing' ? 'Procurement Center' :
+               activeTab === 'settings' ? 'System Control' :
                activeTab === 'orders_history' ? 'Order Archive' : 'System Logs'}
             </h2>
             <p className="text-xs font-mono text-ink/40 uppercase tracking-widest font-bold">
@@ -663,6 +682,7 @@ export default function App() {
                activeTab === 'sales_history' ? 'Audited log of every point-of-sale transaction' :
                activeTab === 'branches' ? 'Command center for all operational locations' :
                activeTab === 'purchasing' ? 'Supply order lifecycle and supplier management' :
+               activeTab === 'settings' ? 'Global configuration and automated backup protocols' :
                activeTab === 'orders_history' ? 'Retrospective on fulfillment and warehouse demand' : 'Raw event logs for security and auditing'}
             </p>
           </div>
@@ -888,6 +908,9 @@ export default function App() {
                   updateBranch={updateBranch}
                   deleteBranch={deleteBranch}
                 />
+              )}
+              {activeTab === 'settings' && (
+                <BackupSettings role={profile?.role || null} />
               )}
             </motion.div>
           </AnimatePresence>
