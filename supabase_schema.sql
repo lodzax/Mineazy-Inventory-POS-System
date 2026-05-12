@@ -192,22 +192,22 @@ DROP POLICY IF EXISTS "Allow all for authenticated users" ON branches;
 CREATE POLICY "Allow all for authenticated users" ON branches FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON products;
-CREATE POLICY "Allow all for authenticated users" ON products FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for authenticated users" ON products FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON inventory;
-CREATE POLICY "Allow all for authenticated users" ON inventory FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for authenticated users" ON inventory FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON transactions;
-CREATE POLICY "Allow all for authenticated users" ON transactions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for authenticated users" ON transactions FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON sales;
-CREATE POLICY "Allow all for authenticated users" ON sales FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for authenticated users" ON sales FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON orders;
-CREATE POLICY "Allow all for authenticated users" ON orders FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for authenticated users" ON orders FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON supply_orders;
-CREATE POLICY "Allow all for authenticated users" ON supply_orders FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for authenticated users" ON supply_orders FOR ALL USING (true) WITH CHECK (true);
 
 -- Trigger to create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
