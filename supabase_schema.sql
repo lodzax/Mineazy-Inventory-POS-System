@@ -1,4 +1,4 @@
--- Supabase Schema for Mineazy
+-- Supabase Schema for Stock Management Portal
 
 -- 1. Branches Table
 CREATE TABLE IF NOT EXISTS branches (
@@ -111,6 +111,23 @@ CREATE TABLE IF NOT EXISTS supply_orders (
   received_by UUID REFERENCES profiles(id)
 );
 
+-- 7.1 Suppliers Table
+CREATE TABLE IF NOT EXISTS suppliers (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  contact_person TEXT,
+  email TEXT,
+  phone TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO suppliers (name, contact_person, email) VALUES
+('Vendors Paradise', 'John V', 'sales@vendors.co.zw'),
+('Midlands Beaters', 'Sarah M', 'midlands@gmail.com'),
+('Parts Investments', 'David P', 'info@parts.zw'),
+('Zhezhiang Mining Well', 'Mr. Chen', 'export@zhezhiang.cn')
+ON CONFLICT (name) DO NOTHING;
+
 -- 8. Notifications Table
 CREATE TABLE IF NOT EXISTS notifications (
   id BIGSERIAL PRIMARY KEY,
@@ -145,6 +162,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'supply_orders') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE supply_orders;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'suppliers') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE suppliers;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notifications') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
   END IF;
@@ -159,6 +179,7 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE supply_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to fix recursion in RLS
@@ -208,6 +229,9 @@ CREATE POLICY "Allow all for authenticated users" ON orders FOR ALL USING (true)
 
 DROP POLICY IF EXISTS "Allow all for authenticated users" ON supply_orders;
 CREATE POLICY "Allow all for authenticated users" ON supply_orders FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON suppliers;
+CREATE POLICY "Allow all for authenticated users" ON suppliers FOR ALL USING (true) WITH CHECK (true);
 
 -- Trigger to create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()

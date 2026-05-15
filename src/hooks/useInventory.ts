@@ -82,6 +82,7 @@ export function useInventory() {
     transactions: any[],
     orders: any[],
     supplyOrders: any[],
+    suppliers: any[],
     sales: any[],
     transfers: any[],
     profiles: any[]
@@ -92,6 +93,7 @@ export function useInventory() {
     transactions: [],
     orders: [],
     supplyOrders: [],
+    suppliers: [],
     sales: [],
     transfers: [],
     profiles: []
@@ -244,6 +246,7 @@ export function useInventory() {
         transactions: [],
         orders: [],
         supplyOrders: [],
+        suppliers: [],
         sales: [],
         transfers: []
       });
@@ -297,6 +300,18 @@ export function useInventory() {
             if (isLimited && userBranch) q = q.eq('destination_branch_id', userBranch.toLowerCase());
             return q as any;
           }),
+          retryableRequest(async () => {
+            try {
+              const res = await supabase.from('suppliers').select('*').order('name', { ascending: true });
+              if (res.error && res.error.code === 'PGRST205') {
+                console.warn("[fetchData] Suppliers table not found in schema cache. It might not be created yet.");
+                return { data: [], error: null };
+              }
+              return res as any;
+            } catch (e) {
+              return { data: [], error: null };
+            }
+          }),
           retryableRequest(() => {
             let q = supabase.from('sales').select('*').order('timestamp', { ascending: false }).limit(100);
             if (isLimited && userBranch) q = q.eq('branch_id', userBranch.toLowerCase());
@@ -323,12 +338,13 @@ export function useInventory() {
         { data: tData, error: tErr },
         { data: oData, error: oErr },
         { data: soData, error: soErr },
+        { data: supData, error: supErr },
         { data: sData, error: sErr },
         { data: prData, error: prErr }
       ] = results;
 
-      if (bErr || pErr || iErr || tErr || oErr || soErr || sErr || prErr) {
-        console.warn("[fetchData] Some queries failed even after retries.", { bErr, pErr, iErr, tErr, oErr, soErr, sErr, prErr });
+      if (bErr || pErr || iErr || tErr || oErr || soErr || supErr || sErr || prErr) {
+        console.warn("[fetchData] Some queries failed even after retries.", { bErr, pErr, iErr, tErr, oErr, soErr, supErr, sErr, prErr });
         // We still proceed if we have at least branches and products as they are critical
         if (bErr || pErr) {
           throw bErr || pErr;
@@ -356,6 +372,7 @@ export function useInventory() {
             total: Number(item.total) || 0
           }))
         })),
+        suppliers: supData || [],
         sales: (sData || []).map((s: any) => ({ ...s, total: Number(s.total) || 0 })),
         profiles: prData || [],
         transfers: []
@@ -388,7 +405,7 @@ export function useInventory() {
     await fetchData();
   };
 
-  const { branches, products, inventory, transactions, orders, supplyOrders, sales, transfers, profiles } = data;
+  const { branches, products, inventory, transactions, orders, supplyOrders, suppliers, sales, transfers, profiles } = data;
 
   const batchUpdateStocks = async (updates: {
     branchId: string,
@@ -932,11 +949,38 @@ export function useInventory() {
         .select()
         .single();
       
-      if (error) throw error;
+      if (error) {
+        if (error.code === 'PGRST205') {
+          throw new Error("System Update in Progress: The supply_orders module is being provisioned. Please wait a few moments and try again.");
+        }
+        throw error;
+      }
       await fetchData();
       return data;
     } catch (err) {
       handleSupabaseError(err, OperationType.WRITE, 'supply_orders');
+    }
+  };
+
+  const addSupplier = async (name: string, contact?: string, email?: string, phone?: string) => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .insert({ name, contact_person: contact, email, phone })
+        .select()
+        .single();
+      
+      if (error) {
+        if (error.code === 'PGRST205') {
+          throw new Error("System Update in Progress: The suppliers module is being provisioned. Please wait a few moments and try again.");
+        }
+        throw error;
+      }
+      await fetchData();
+      return data;
+    } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'suppliers');
     }
   };
 
@@ -1189,12 +1233,14 @@ export function useInventory() {
     transactions, 
     orders, 
     supplyOrders,
+    suppliers,
     sales,
     transfers,
     profiles,
     updateStocks, 
     batchUpdateStocks,
     addProduct, 
+    addSupplier,
     addBranch,
     updateBranch,
     deleteBranch,

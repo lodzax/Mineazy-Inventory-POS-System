@@ -96,7 +96,7 @@ async function runBackup() {
     })) || [];
     xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(ordersData), "Order History");
 
-    const fileName = `Mineazy_Backup_${new Date().toISOString().replace(/[:.]/g, '-')}.xlsx`;
+    const fileName = `Portal_Backup_${new Date().toISOString().replace(/[:.]/g, '-')}.xlsx`;
     const filePath = path.join(__dirname, fileName);
     xlsx.writeFile(wb, filePath);
 
@@ -281,7 +281,7 @@ async function startServer() {
       xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(ordersData), "Order History");
 
       const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      const fileName = `Mineazy_Snapshot_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const fileName = `Portal_Snapshot_${new Date().toISOString().split('T')[0]}.xlsx`;
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);

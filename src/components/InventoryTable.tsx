@@ -481,8 +481,8 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                     className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono font-bold uppercase text-[10px]"
                   >
                     <option value="">SELECT PRODUCT</option>
-                    {products.map(p => (
-                      <option key={p.id} value={p.id}>{p.name.toUpperCase()}</option>
+                    {products.map((p, idx) => (
+                      <option key={`${p.id}-${idx}`} value={p.id}>{p.name.toUpperCase()}</option>
                     ))}
                   </select>
                 </div>
@@ -564,8 +564,8 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
               className="w-full px-6 py-3.5 bg-white border border-ink/5 rounded-2xl font-sans text-xs font-bold uppercase tracking-widest appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-primary/5 shadow-xl shadow-ink/[0.01] disabled:opacity-50"
             >
               {!isLimited && <option value="all">Global Matrix</option>}
-              {branches.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+              {branches.map((b, idx) => (
+                <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
               ))}
             </select>
           </div>
@@ -592,8 +592,8 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
             <thead>
               <tr className="border-b border-ink/5 bg-background font-mono text-[9px] uppercase text-ink/40 font-bold tracking-[0.2em]">
                 <th className="px-8 py-6">Branch Endpoint</th>
-                {filteredProducts.map(p => (
-                  <th key={p.id} className="px-8 py-6 min-w-[300px]">
+                {filteredProducts.map((p, idx) => (
+                  <th key={`${p.id}-${idx}`} className="px-8 py-6 min-w-[300px]">
                     <div className="flex items-center justify-between gap-4 mb-2">
                        <div className="flex flex-col">
                         <div className="flex items-center gap-2">
@@ -636,15 +636,15 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
               </tr>
             </thead>
             <tbody className="divide-y divide-ink/[0.03]">
-              {filteredBranches.map(branch => (
-                <tr key={branch.id} className="hover:bg-background/40 transition-colors group">
+              {filteredBranches.map((branch, bIdx) => (
+                <tr key={`${branch.id}-${bIdx}`} className="hover:bg-background/40 transition-colors group">
                   <td className="px-8 py-8">
                     <div className="flex flex-col">
                       <span className="font-serif text-xl font-medium text-ink group-hover:text-primary transition-colors">{branch.name}</span>
                       <span className="text-[10px] font-mono text-ink/30 font-bold uppercase tracking-widest">{branch.id}</span>
                     </div>
                   </td>
-                  {filteredProducts.map(product => {
+                  {filteredProducts.map((product, pIdx) => {
                     const item = inventory.find(i => i.branch_id === branch.id && i.product_id === product.id);
                     const stock = item ? item.stock : 0;
                     const threshold = item ? (item.low_stock_threshold || 5) : 5;
@@ -653,7 +653,7 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                     const isEditing = editingStock?.branchId === branch.id && editingStock?.productId === product.id;
 
                     return (
-                      <td key={product.id} className="px-8 py-8">
+                      <td key={`${product.id}-${pIdx}`} className="px-8 py-8">
                         <div className="flex items-center gap-6">
                           {/* Stock Level Display / Input */}
                           <div 

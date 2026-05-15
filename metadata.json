@@ -1,6 +1,6 @@
 {
-  "name": "Mineazy Inventory Solutions",
-  "description": "Full inventory management system for Mineazy Mining Solutions, featuring multi-branch tracking, QR scanning, and real-time dashboard analytics.",
+  "name": "Stock Management Portal",
+  "description": "Full inventory management system featuring multi-branch tracking, QR scanning, and real-time dashboard analytics.",
   "requestFramePermissions": ["camera"],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -241,8 +241,8 @@ export default function POSView({ products, branches, inventory, processSale, us
                   className="bg-transparent focus:outline-none font-black text-xs uppercase tracking-widest text-ink appearance-none cursor-pointer pr-6 disabled:cursor-not-allowed leading-none"
                 >
                   {branches.length > 0 ? (
-                    branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                    branches.map((b, idx) => (
+                      <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
                     ))
                   ) : (
                     <option value="">No Branches Available</option>
@@ -259,7 +259,7 @@ export default function POSView({ products, branches, inventory, processSale, us
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
-          {filteredProducts.map(product => {
+          {filteredProducts.map((product, idx) => {
             const stock = branchInventory.find(i => i.product_id === product.id)?.stock || 0;
             const inCart = cart.find(item => item.productId === product.id)?.quantity || 0;
             const availableStock = stock - inCart;
@@ -268,7 +268,7 @@ export default function POSView({ products, branches, inventory, processSale, us
 
             return (
               <motion.button
-                key={product.id}
+                key={`${product.id}-${idx}`}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileHover={{ y: -6, shadow: "0 25px 50px -12px rgba(0, 0, 0, 0.05)" }}
@@ -389,12 +389,12 @@ export default function POSView({ products, branches, inventory, processSale, us
                   </div>
                   
                   <AnimatePresence mode="popLayout" initial={false}>
-                    {cart.map(item => {
+                    {cart.map((item, idx) => {
                       const product = products.find(p => p.id === item.productId);
                       const lineTotal = item.price * item.quantity;
                       return (
                         <motion.div 
-                          key={item.productId}
+                          key={`${item.productId}-${idx}`}
                           layout
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}

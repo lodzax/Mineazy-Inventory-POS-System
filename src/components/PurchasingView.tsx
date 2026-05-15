@@ -26,9 +26,11 @@ import autoTable from 'jspdf-autotable';
 
 interface PurchasingViewProps {
   supplyOrders: any[];
+  suppliers: any[];
   branches: any[];
   products: any[];
   createSupplyOrder: (order: any) => Promise<any>;
+  addSupplier: (name: string, contact?: string, email?: string, phone?: string) => Promise<any>;
   updateSupplyOrderStatus: (id: string | number, status: string) => Promise<void>;
   confirmSupplyReceipt: (id: string | number) => Promise<void>;
   profile: any;
@@ -36,17 +38,27 @@ interface PurchasingViewProps {
 
 export default function PurchasingView({ 
   supplyOrders, 
+  suppliers,
   branches, 
   products, 
   createSupplyOrder, 
+  addSupplier,
   updateSupplyOrderStatus, 
   confirmSupplyReceipt,
   profile
 }: PurchasingViewProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showNewSupplierModal, setShowNewSupplierModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<any | null>(null);
   
+  // New Supplier Form State
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierContact, setNewSupplierContact] = useState('');
+  const [newSupplierEmail, setNewSupplierEmail] = useState('');
+  const [newSupplierPhone, setNewSupplierPhone] = useState('');
+  const [isAddingSupplier, setIsAddingSupplier] = useState(false);
+
   // Filter State
   const [statusFilter, setStatusFilter] = useState('all');
   const [supplierFilter, setSupplierFilter] = useState('');
@@ -200,6 +212,28 @@ export default function PurchasingView({
     }
   };
 
+  const handleAddSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSupplierName) return;
+
+    setIsAddingSupplier(true);
+    try {
+      const added = await addSupplier(newSupplierName, newSupplierContact, newSupplierEmail, newSupplierPhone);
+      if (added) {
+        setSupplierName(added.name);
+        setShowNewSupplierModal(false);
+        setNewSupplierName('');
+        setNewSupplierContact('');
+        setNewSupplierEmail('');
+        setNewSupplierPhone('');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAddingSupplier(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Created': return 'bg-blue-500/10 text-blue-600 border-blue-200';
@@ -340,10 +374,10 @@ export default function PurchasingView({
             <p className="text-ink/40 font-mono text-xs uppercase tracking-widest">No matching supply orders found</p>
           </div>
         ) : (
-          filteredOrders.map((order) => (
+          filteredOrders.map((order, idx) => (
             <motion.div 
               layout
-              key={order.id}
+              key={order.id || `order-${idx}`}
               className="bg-white rounded-[2rem] border border-ink/5 p-8 shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="flex flex-col lg:flex-row justify-between gap-8">
@@ -619,14 +653,20 @@ export default function PurchasingView({
                         <select 
                           required
                           value={supplierName}
-                          onChange={(e) => setSupplierName(e.target.value)}
+                          onChange={(e) => {
+                            if (e.target.value === 'ADD_NEW') {
+                              setShowNewSupplierModal(true);
+                            } else {
+                              setSupplierName(e.target.value);
+                            }
+                          }}
                           className="w-full pl-11 pr-4 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold appearance-none cursor-pointer"
                         >
                           <option value="">Select Supplier</option>
-                          <option value="Vendors Paradise">Vendors Paradise</option>
-                          <option value="Midlands Beaters">Midlands Beaters</option>
-                          <option value="Parts Investments">Parts Investments</option>
-                          <option value="Zhezhiang Mining Well">Zhezhiang Mining Well</option>
+                          <option value="ADD_NEW" className="text-primary font-black">+ Add New Supplier...</option>
+                          {suppliers.map((s, idx) => (
+                            <option key={s.id || `sup-${idx}`} value={s.name}>{s.name}</option>
+                          ))}
                         </select>
                         </div>
                       </div>
@@ -861,6 +901,93 @@ export default function PurchasingView({
                 </div>
               </form>
             </motion.div>
+          </motion.div>
+        )}
+
+        {showNewSupplierModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/80 backdrop-blur-md p-4"
+          >
+            <motion.form 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              onSubmit={handleAddSupplier}
+              className="bg-white rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl space-y-8"
+            >
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-2xl font-serif text-ink">New Supplier</h3>
+                  <p className="text-[10px] font-mono text-primary uppercase font-black tracking-widest mt-1">Expansion Module</p>
+                </div>
+                <button type="button" onClick={() => setShowNewSupplierModal(false)} className="p-2 hover:bg-background rounded-full transition-colors"><XIcon className="w-5 h-5" /></button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-mono uppercase text-ink/40 font-black ml-1">Business Name</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newSupplierName}
+                    onChange={(e) => setNewSupplierName(e.target.value)}
+                    className="w-full p-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold text-sm"
+                    placeholder="Enter supplier name..."
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-mono uppercase text-ink/40 font-black ml-1">Contact Person</label>
+                  <input 
+                    type="text"
+                    value={newSupplierContact}
+                    onChange={(e) => setNewSupplierContact(e.target.value)}
+                    className="w-full p-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-bold text-sm"
+                    placeholder="Name of representative..."
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono uppercase text-ink/40 font-black ml-1">Email</label>
+                    <input 
+                      type="email"
+                      value={newSupplierEmail}
+                      onChange={(e) => setNewSupplierEmail(e.target.value)}
+                      className="w-full p-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
+                      placeholder="Email address..."
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono uppercase text-ink/40 font-black ml-1">Phone</label>
+                    <input 
+                      type="tel"
+                      value={newSupplierPhone}
+                      onChange={(e) => setNewSupplierPhone(e.target.value)}
+                      className="w-full p-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
+                      placeholder="Phone number..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowNewSupplierModal(false)}
+                  className="flex-1 py-4 font-black text-[10px] uppercase tracking-widest text-ink hover:bg-background rounded-2xl transition-all"
+                >
+                  Discard
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isAddingSupplier || !newSupplierName}
+                  className="flex-1 py-4 bg-primary text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {isAddingSupplier ? <CircleGauge className="w-4 h-4 animate-spin" /> : "Save Vendor"}
+                </button>
+              </div>
+            </motion.form>
           </motion.div>
         )}
       </AnimatePresence>

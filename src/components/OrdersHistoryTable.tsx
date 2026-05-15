@@ -114,7 +114,7 @@ export default function OrdersHistoryTable({
     
     doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
-    doc.text('MINEAZY ORDER LOGS', 105, 20, { align: 'center' });
+    doc.text('STOCK MANAGEMENT ORDER LOGS', 105, 20, { align: 'center' });
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');

@@ -96,6 +96,7 @@ export default function App() {
     cancelOrder,
     confirmReceipt,
     createSupplyOrder,
+    addSupplier,
     updateSupplyOrderStatus,
     confirmSupplyReceipt,
     processSale,
@@ -106,6 +107,7 @@ export default function App() {
     deleteBranch,
     updateThreshold,
     transferStock,
+    suppliers,
     error,
     loading: dataLoading,
     authLoading,
@@ -256,18 +258,7 @@ export default function App() {
           
           <div className="relative z-10">
             <div className="text-center mb-10">
-              <div className="flex justify-center mb-8">
-                <img 
-                  src="/logo.png" 
-                  alt="MMS Mineazy Mining Solutions" 
-                  className="h-24 w-auto object-contain"
-                  onError={(e) => {
-                    // Fallback to a hidden state if image is missing
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              </div>
-              <h1 className="text-6xl font-serif font-light mb-2 text-ink">Mineazy</h1>
+              <h1 className="text-4xl font-serif font-light mb-2 text-ink">Stock Portal</h1>
               <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-primary">Stock Management Portal</p>
             </div>
 
@@ -331,8 +322,8 @@ export default function App() {
                 className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
               >
                 <option value="">Select Branch</option>
-                {dbBranches.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                {dbBranches.map((b, idx) => (
+                  <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </div>
@@ -412,7 +403,7 @@ export default function App() {
 
         <div className={`mb-12 text-center transition-all duration-300 ${isSidebarCollapsed ? 'scale-75' : ''}`}>
           <h1 className={`${isSidebarCollapsed ? 'text-xl' : 'text-3xl'} font-serif font-medium mb-1 tracking-tight text-white/90 truncate`}>
-            {isSidebarCollapsed ? 'M' : 'Mineazy'}
+            {isSidebarCollapsed ? 'S' : 'Stock Portal'}
           </h1>
           {!isSidebarCollapsed && (
             <>
@@ -541,7 +532,7 @@ export default function App() {
           <button onClick={() => setIsSidebarOpen(true)}>
             <Menu className="w-6 h-6 text-ink" />
           </button>
-          <span className="font-serif font-medium text-xl">Mineazy</span>
+          <span className="font-serif font-medium text-xl">Stock Portal</span>
         </div>
         <button onClick={() => setShowScanner(true)} className="p-2 bg-primary text-white rounded-xl shadow-lg">
           <QrCode className="w-5 h-5" />
@@ -566,7 +557,7 @@ export default function App() {
               className="fixed inset-y-0 left-0 w-[280px] bg-ink z-50 p-8 flex flex-col text-white"
             >
               <div className="flex justify-between items-center mb-10 px-2">
-                <h1 className="text-3xl font-serif italic text-white">Mineazy</h1>
+                <h1 className="text-3xl font-serif italic text-white">Stock Portal</h1>
                 <button onClick={() => setIsSidebarOpen(false)} className="p-2 bg-white/10 rounded-full"><X className="w-5 h-5 text-white" /></button>
               </div>
               <nav className="flex-1 space-y-1.5">
@@ -843,9 +834,11 @@ export default function App() {
               {activeTab === 'purchasing' && (
                 <PurchasingView
                   supplyOrders={supplyOrders}
+                  suppliers={suppliers}
                   branches={dbBranches}
                   products={dbProducts}
                   createSupplyOrder={createSupplyOrder}
+                  addSupplier={addSupplier}
                   updateSupplyOrderStatus={updateSupplyOrderStatus}
                   confirmSupplyReceipt={confirmSupplyReceipt}
                   profile={profile}
@@ -991,7 +984,7 @@ function HistoryTable({ transactions, branches, products, profile }: { transacti
     // Add Header
     doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
-    doc.text('MINEAZY TRANSACTION LOGS', 105, 20, { align: 'center' });
+    doc.text('STOCK MANAGEMENT TRANSACTION LOGS', 105, 20, { align: 'center' });
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -1056,8 +1049,8 @@ function HistoryTable({ transactions, branches, products, profile }: { transacti
                   className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
                 >
                   <option value="all">All Branches</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
+                  {branches.map((b, idx) => (
+                    <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
                   ))}
                 </select>
                 <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
@@ -1074,8 +1067,8 @@ function HistoryTable({ transactions, branches, products, profile }: { transacti
                 className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
               >
                 <option value="all">All Products</option>
-                {products.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                {products.map((p, idx) => (
+                  <option key={`${p.id}-${idx}`} value={p.id}>{p.name}</option>
                 ))}
               </select>
               <Package className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
@@ -1171,7 +1164,7 @@ function HistoryTable({ transactions, branches, products, profile }: { transacti
                 const branch = branches.find(b => b.id === tx.branch_id);
                 const product = products.find(p => p.id === tx.product_id);
                 return (
-                  <tr key={idx} className="text-sm hover:bg-background/50 transition-colors group">
+                  <tr key={`${tx.id || 'tx'}-${idx}`} className="text-sm hover:bg-background/50 transition-colors group">
                     <td className="px-8 py-5">
                       <div className="flex flex-col">
                         <span className="font-mono text-[11px] text-ink/60 font-bold">
@@ -1245,14 +1238,14 @@ function HistoryTable({ transactions, branches, products, profile }: { transacti
                   (pageNum < currentPage - 1 || pageNum > currentPage + 1)
                 ) {
                   if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
-                    return <span key={pageNum} className="text-ink/20">...</span>;
+                    return <span key={`dots-${pageNum}`} className="text-ink/20">...</span>;
                   }
                   return null;
                 }
 
                 return (
                   <button
-                    key={pageNum}
+                    key={`page-${pageNum}`}
                     onClick={() => setCurrentPage(pageNum)}
                     className={`min-w-8 h-8 rounded-xl font-mono text-[10px] font-bold transition-all ${
                       currentPage === pageNum 

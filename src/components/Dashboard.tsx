@@ -34,7 +34,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <p className="text-[10px] font-mono font-bold text-white/40 uppercase mb-2 tracking-widest">{label}</p>
         <div className="space-y-1.5">
           {payload.map((entry, index) => (
-            <div key={index} className="flex items-center justify-between gap-6">
+            <div key={`tooltip-${entry.name}-${index}`} className="flex items-center justify-between gap-6">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: entry.color }} />
                 <span className="text-[11px] text-white/80 font-medium">{entry.name}:</span>
@@ -355,7 +355,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
                   />
                   {products.map((p, idx) => (
                     <Bar 
-                      key={p.id} 
+                      key={`${p.id}-${idx}`} 
                       dataKey={p.name} 
                       stackId="a" 
                       fill={COLORS[idx % COLORS.length]} 
@@ -396,7 +396,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
                   >
                     {productStock.map((entry, index) => (
                       <Cell 
-                        key={`cell-${index}`} 
+                        key={`cell-${entry.name || 'unnamed'}-${index}`} 
                         fill={COLORS[index % COLORS.length]} 
                         style={{ filter: 'drop-shadow(0px 4px 6px rgba(0,0,0,0.1))' }}
                       />
@@ -465,7 +465,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
                 />
                 {inventoryTimeSeries.activeProducts.map((p, idx) => (
                   <Area
-                    key={p.id}
+                    key={`${p.id}-${idx}`}
                     type="monotone"
                     dataKey={p.name}
                     stroke={COLORS[idx % COLORS.length]}
@@ -495,7 +495,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
           </div>
           <div className="space-y-4">
             {criticalStock.slice(0, 5).map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between p-4 bg-danger/5 rounded-3xl border border-danger/10 group hover:bg-danger transition-all overflow-hidden relative">
+              <div key={`${item.product}-${item.branch}-${idx}`} className="flex items-center justify-between p-4 bg-danger/5 rounded-3xl border border-danger/10 group hover:bg-danger transition-all overflow-hidden relative">
                 <div className="relative z-10">
                   <p className="text-xs font-black text-danger group-hover:text-white uppercase tracking-tight">{item.product}</p>
                   <p className="text-[10px] font-mono text-ink/40 uppercase group-hover:text-white/60 font-bold">{item.branch}</p>
@@ -546,7 +546,7 @@ export default function Dashboard({ inventory, branches, products, orders, trans
               </p>
               <div className="flex justify-end items-end gap-1">
                  {movementTrends.map((t, i) => (
-                   <div key={i} className="flex flex-col items-center gap-2">
+                   <div key={`${t.date}-${i}`} className="flex flex-col items-center gap-2">
                      <div 
                       className="w-8 bg-primary/40 hover:bg-primary rounded-t-lg transition-all" 
                       style={{ height: `${Math.max(t.count * 10, 20)}px` }}
