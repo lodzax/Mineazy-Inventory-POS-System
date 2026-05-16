@@ -509,11 +509,14 @@ export default function App() {
             {!isSidebarCollapsed && <span>Scanner</span>}
           </button>
           
-          <div className="space-y-1">
-            <p className={`text-[9px] font-mono uppercase text-white/40 font-bold tracking-widest transition-opacity ${isSidebarCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'px-4 opacity-100'}`}>Account</p>
+          <div className="space-y-3 px-4">
+            <div className={`transition-opacity ${isSidebarCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
+              <p className="text-[9px] font-mono uppercase text-white/40 font-bold tracking-widest mb-1">Account</p>
+              <p className="text-[11px] font-mono text-primary/80 font-medium truncate">{user?.email}</p>
+            </div>
             <button 
               onClick={logout}
-              className={`flex items-center gap-3 py-3 text-danger/80 hover:bg-danger/10 hover:text-danger rounded-xl transition-all w-full text-left font-bold text-xs uppercase tracking-wider ${isSidebarCollapsed ? 'justify-center' : 'px-4'}`}
+              className={`flex items-center gap-3 py-3 text-danger/80 hover:bg-danger/10 hover:text-danger rounded-xl transition-all w-full text-left font-bold text-xs uppercase tracking-wider ${isSidebarCollapsed ? 'justify-center px-0' : 'px-4'}`}
             >
               <LogOut className="w-4 h-4" />
               {!isSidebarCollapsed && <span>Log Out</span>}
@@ -636,13 +639,17 @@ export default function App() {
                   label="QR Scanner" 
                 />
               </nav>
-              <button 
-                onClick={logout}
-                className="mt-auto flex items-center gap-3 px-4 py-3 text-red-500 font-medium"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Log Out</span>
-              </button>
+              <div className="mt-auto pt-6 border-t border-white/10 px-4 pb-4">
+                <p className="text-[9px] font-mono uppercase text-white/40 font-bold tracking-widest mb-1">Logged in as</p>
+                <p className="text-[11px] font-mono text-primary/80 font-medium truncate mb-4">{user?.email}</p>
+                <button 
+                  onClick={logout}
+                  className="flex items-center gap-3 text-red-500 font-bold text-[10px] uppercase tracking-widest"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Log Out</span>
+                </button>
+              </div>
             </motion.div>
           </>
         )}
@@ -676,13 +683,15 @@ export default function App() {
 
           {activeTab === 'inventory' && (
             <div className="flex gap-4">
-               <button 
-                onClick={() => setShowProductModal(true)}
-                className="px-6 py-4 bg-ink text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold flex items-center gap-2 hover:translate-y-[-2px] transition-all shadow-xl"
-                >
-                <Plus className="w-4 h-4" />
-                Add Product
-              </button>
+               {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                 <button 
+                  onClick={() => setShowProductModal(true)}
+                  className="px-6 py-4 bg-ink text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold flex items-center gap-2 hover:translate-y-[-2px] transition-all shadow-xl"
+                  >
+                  <Plus className="w-4 h-4" />
+                  Add Product
+                </button>
+               )}
               {dbBranches.length === 0 && !dataLoading && (
                 <button 
                   onClick={seedData}
@@ -762,9 +771,10 @@ export default function App() {
                         type="number"
                         required
                         step="0.01"
+                        disabled={!(profile?.role === 'Administrator' || profile?.role === 'Manager')}
                         value={isNaN(parseFloat(newProductPrice)) ? '' : newProductPrice}
                         onChange={(e) => setNewProductPrice(e.target.value)}
-                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                         placeholder="0.00"
                       />
                     </div>
@@ -774,9 +784,10 @@ export default function App() {
                         type="number"
                         required
                         step="0.01"
+                        disabled={!(profile?.role === 'Administrator' || profile?.role === 'Manager')}
                         value={isNaN(parseFloat(newProductCost)) ? '' : newProductCost}
                         onChange={(e) => setNewProductCost(e.target.value)}
-                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                         placeholder="0.00"
                       />
                     </div>

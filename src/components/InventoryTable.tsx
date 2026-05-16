@@ -242,9 +242,10 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                       type="number"
                       required
                       step="0.01"
+                      disabled={!(profile?.role === 'Administrator' || profile?.role === 'Manager')}
                       value={editForm.price}
                       onChange={(e) => setEditForm({...editForm, price: e.target.value})}
-                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono font-bold"
+                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -253,9 +254,10 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                       type="number"
                       required
                       step="0.01"
+                      disabled={!(profile?.role === 'Administrator' || profile?.role === 'Manager')}
                       value={editForm.cost_price}
                       onChange={(e) => setEditForm({...editForm, cost_price: e.target.value})}
-                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono font-bold"
+                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -602,7 +604,7 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                         </div>
                         <span className="text-primary tracking-tighter normal-case font-serif text-[11px] italic font-medium">{p.unit} unit</span>
                       </div>
-                      {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                      {(profile?.role === 'Administrator' || profile?.role === 'Manager' || profile?.role === 'Supervisor') && (
                         <button 
                           onClick={() => {
                             setEditingProduct(p);
