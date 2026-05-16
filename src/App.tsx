@@ -128,15 +128,11 @@ export default function App() {
       setActiveTab('pos');
     } else if (profile?.role === 'Purchasing' && activeTab !== 'purchasing') {
       setActiveTab('purchasing');
-    } else if ((profile?.role === 'Supervisor' || profile?.role === 'Warehouse') && (activeTab === 'dashboard' || activeTab === 'inventory' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
-      // If Supervisor or Warehouse, dashboard and inventory are no longer accessible
-      if (profile?.role === 'Supervisor') {
-        if (activeTab !== 'pos' && activeTab !== 'orders_history' && activeTab !== 'sales_history') {
-           setActiveTab('pos');
-        }
-      } else {
-        setActiveTab('orders_history');
-      }
+    } else if (profile?.role === 'Warehouse' && (activeTab === 'dashboard' || activeTab === 'inventory' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
+      setActiveTab('orders_history');
+    } else if (profile?.role === 'Supervisor' && (activeTab === 'dashboard' || activeTab === 'branches' || activeTab === 'settings')) {
+      // Supervisors can access inventory, but not dashboard, branches or settings
+      setActiveTab('inventory');
     }
   }, [profile, activeTab]);
 
@@ -423,7 +419,7 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
-          {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+          {(profile?.role === 'Administrator' || profile?.role === 'Manager' || profile?.role === 'Supervisor') && (
             <NavItem 
               active={activeTab === 'inventory'} 
               onClick={() => setActiveTab('inventory')} 
@@ -569,7 +565,7 @@ export default function App() {
                     label="Reports" 
                   />
                 )}
-                {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                {(profile?.role === 'Administrator' || profile?.role === 'Manager' || profile?.role === 'Supervisor') && (
                   <NavItem 
                     active={activeTab === 'inventory'} 
                     onClick={() => { setActiveTab('inventory'); setIsSidebarOpen(false); }} 
