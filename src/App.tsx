@@ -101,6 +101,7 @@ export default function App() {
     confirmSupplyReceipt,
     processSale,
     updateProduct,
+    deleteProduct,
     convertMercury,
     addBranch,
     updateBranch,
@@ -858,6 +859,7 @@ export default function App() {
                   products={dbProducts} 
                   onUpdate={(bid, pid, amt, type, notes = '') => updateStocks(bid, pid, amt, type, notes)}
                   updateProduct={updateProduct}
+                  deleteProduct={deleteProduct}
                   updateThreshold={updateThreshold}
                   convertMercury={convertMercury}
                   transferStock={transferStock}

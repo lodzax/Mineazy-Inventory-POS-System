@@ -1095,6 +1095,27 @@ export function useInventory() {
     }
   };
 
+  const deleteProduct = async (id: string) => {
+    if (!user) return;
+    try {
+      // First delete associated logs in transactions to avoid foreign key violations
+      const { error: txError } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('product_id', id);
+      if (txError) throw txError;
+
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      await fetchData();
+    } catch (err) {
+      handleSupabaseError(err, OperationType.DELETE, 'products');
+    }
+  };
+
   const updateThreshold = async (branchId: string, productId: string, threshold: number) => {
     if (!user) return;
     try {
@@ -1240,6 +1261,7 @@ export function useInventory() {
     updateStocks, 
     batchUpdateStocks,
     addProduct, 
+    deleteProduct,
     addSupplier,
     addBranch,
     updateBranch,

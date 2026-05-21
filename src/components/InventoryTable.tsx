@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Minus, Search, ChevronDown, ChevronUp, Edit3, QrCode, ArrowRightLeft } from 'lucide-react';
+import { Plus, Minus, Search, ChevronDown, ChevronUp, Edit3, QrCode, ArrowRightLeft, Trash2, AlertTriangle } from 'lucide-react';
 import QRCodeModal from './QRCodeModal';
 
 interface InventoryTableProps {
@@ -10,15 +10,17 @@ interface InventoryTableProps {
   products: any[];
   onUpdate: (branchId: string, productId: string, amount: number, type: 'add' | 'remove', notes: string) => void;
   updateProduct: (id: string, updates: { price?: number, cost_price?: number, unit?: string, name?: string }) => void;
+  deleteProduct: (id: string) => void;
   updateThreshold: (branchId: string, productId: string, threshold: number) => void;
   convertMercury: (branchId: string, type: '1kg-to-500g' | '500g-to-16.5g' | '1kg-to-30g') => Promise<boolean>;
   transferStock: (sourceBranchId: string, destBranchId: string, productId: string, amount: number, notes: string) => void;
   profile: any;
 }
 
-export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, updateThreshold, convertMercury, transferStock, profile }: InventoryTableProps) {
+export default function InventoryTable({ inventory, branches, products, onUpdate, updateProduct, deleteProduct, updateThreshold, convertMercury, transferStock, profile }: InventoryTableProps) {
   const isLimited = profile?.role === 'Supervisor' || profile?.role === 'Cashier';
   const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [productToDelete, setProductToDelete] = useState<any | null>(null);
 
   // Sync selected branch for limited roles
   React.useEffect(() => {
@@ -534,6 +536,71 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {productToDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/60 p-4 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white p-10 rounded-[3rem] w-full max-w-md border border-white/10 shadow-2xl space-y-8 text-center"
+            >
+              <div className="flex flex-col items-center">
+                <div className="w-16 h-16 bg-danger/10 text-danger rounded-2xl flex items-center justify-center mb-6">
+                  <AlertTriangle className="w-8 h-8" />
+                </div>
+                <h3 className="text-3xl font-serif font-medium text-ink">Delete Product?</h3>
+                <p className="text-[10px] font-mono text-primary uppercase font-bold tracking-widest mt-1">Irreversible System Action</p>
+              </div>
+
+              <div className="bg-background/50 p-6 rounded-2xl border border-ink/5 space-y-3 text-left">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-ink/40 font-mono uppercase tracking-wider">Product Name</span>
+                  <span className="font-bold text-ink">{productToDelete.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-ink/40 font-mono uppercase tracking-wider">Category</span>
+                  <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-[10px] uppercase font-mono rounded-md font-bold">{productToDelete.category || 'General'}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-ink/40 font-mono uppercase tracking-wider">Selling Price</span>
+                  <span className="font-mono font-bold text-ink">${productToDelete.price || 0}</span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-danger font-medium leading-relaxed bg-danger/5 p-4 rounded-xl border border-danger/10">
+                Warning: Deleting this product will cascade and remove its inventory counts, transaction history logs, and associations across ALL branches immediately.
+              </p>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => setProductToDelete(null)}
+                  className="flex-1 py-4 font-bold text-[10px] text-ink uppercase tracking-widest hover:bg-background rounded-2xl transition-all border border-ink/5"
+                >
+                  Keep Product
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    deleteProduct(productToDelete.id);
+                    setProductToDelete(null);
+                  }}
+                  className="flex-1 py-4 font-bold text-[10px] bg-danger text-white rounded-2xl uppercase tracking-[0.2em] shadow-xl hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex flex-col lg:flex-row gap-5 items-center justify-between">
         <div className="relative w-full lg:w-96">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
@@ -604,23 +671,34 @@ export default function InventoryTable({ inventory, branches, products, onUpdate
                         </div>
                         <span className="text-primary tracking-tighter normal-case font-serif text-[11px] italic font-medium">{p.unit} unit</span>
                       </div>
-                      {(profile?.role === 'Administrator' || profile?.role === 'Manager' || profile?.role === 'Supervisor') && (
-                        <button 
-                          onClick={() => {
-                            setEditingProduct(p);
-                            setEditForm({ 
-                              name: p.name, 
-                              unit: p.unit, 
-                              price: (p.price || 0).toString(), 
-                              cost_price: (p.cost_price || 0).toString() 
-                            });
-                          }}
-                          className="p-2 hover:bg-primary/10 rounded-xl text-primary transition-all active:scale-90"
-                          title="Edit Resource Details"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {(profile?.role === 'Administrator' || profile?.role === 'Manager' || profile?.role === 'Supervisor') && (
+                          <button 
+                            onClick={() => {
+                              setEditingProduct(p);
+                              setEditForm({ 
+                                name: p.name, 
+                                unit: p.unit, 
+                                price: (p.price || 0).toString(), 
+                                cost_price: (p.cost_price || 0).toString() 
+                              });
+                            }}
+                            className="p-2 hover:bg-primary/10 rounded-xl text-primary transition-all active:scale-90"
+                            title="Edit Resource Details"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                          <button 
+                            onClick={() => setProductToDelete(p)}
+                            className="p-2 hover:bg-danger/10 rounded-xl text-danger hover:text-danger transition-all active:scale-90"
+                            title="Delete Product"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-4">
                       <div className="flex flex-col">
