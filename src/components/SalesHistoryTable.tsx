@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Filter, Printer, User, Download, FileText, Calendar, ArrowRight } from 'lucide-react';
+import { Search, Filter, Printer, User, Download, FileText, Calendar, ArrowRight, Coins, Package, LineChart, TrendingUp, Layers } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import POSReceipt from './POSReceipt';
@@ -22,6 +22,7 @@ export default function SalesHistoryTable({ sales, branches, products, profile }
   const itemsPerPage = 15;
 
   const [selectedSale, setSelectedSale] = useState<any | null>(null);
+  const [summaryTab, setSummaryTab] = useState<'artifacts' | 'daily'>('artifacts');
 
   const isAdmin = profile?.role === 'Administrator';
   const userBranchId = profile?.branch_id;
@@ -64,6 +65,113 @@ export default function SalesHistoryTable({ sales, branches, products, profile }
   
   const totalPages = Math.ceil(sortedSales.length / itemsPerPage);
   const paginatedSales = sortedSales.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // 1. Core aggregates based on filteredSales / sortedSales
+  const currentTotalRevenue = sortedSales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+  const currentTotalOrders = sortedSales.length;
+  const currentTotalUnitsSold = sortedSales.reduce((sum, sale) => {
+    return sum + (sale.items?.reduce((itemSum: number, item: any) => itemSum + (item.quantity || 0), 0) || 0);
+  }, 0);
+
+  // 2. Artifact summary breakdown based on filteredSales / sortedSales
+  const artifactSummaryMap = new Map<string, { id: string; quantity: number; revenue: number; name: string; unit: string; category: string }>();
+
+  // Pre-populate products database to ensure name/unit mapping
+  products.forEach(p => {
+    artifactSummaryMap.set(p.id, {
+      id: p.id,
+      quantity: 0,
+      revenue: 0,
+      name: p.name,
+      unit: p.unit,
+      category: p.category || 'General'
+    });
+  });
+
+  sortedSales.forEach(sale => {
+    sale.items?.forEach((item: any) => {
+      const existing = artifactSummaryMap.get(item.productId);
+      const productDef = products.find(p => p.id === item.productId);
+      
+      const itemPrice = item.price || productDef?.price || 0;
+      const itemRev = (item.quantity || 0) * itemPrice;
+      
+      if (existing) {
+        existing.quantity += item.quantity || 0;
+        existing.revenue += itemRev;
+      } else {
+        artifactSummaryMap.set(item.productId, {
+          id: item.productId,
+          quantity: item.quantity || 0,
+          revenue: itemRev,
+          name: productDef?.name || item.productId,
+          unit: productDef?.unit || 'unit',
+          category: productDef?.category || 'General'
+        });
+      }
+    });
+  });
+
+  const artifactSummaries = Array.from(artifactSummaryMap.values())
+    .filter(item => item.quantity > 0)
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // 3. Daily Sales Totals calculation
+  const dailySummaryMap = new Map<string, { 
+    dateStr: string; 
+    totalRevenue: number; 
+    transactionCount: number; 
+    unitsSold: number;
+    branchBreakdown: { [branchId: string]: { name: string; revenue: number; count: number } };
+  }>();
+
+  sortedSales.forEach(sale => {
+    if (!sale.timestamp) return;
+    const dateObj = new Date(sale.timestamp);
+    const dateKey = dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    const branch = branches.find(b => b.id === sale.branch_id);
+    const branchName = branch?.name || 'Unknown Branch';
+    
+    const saleUnits = sale.items?.reduce((itemSum: number, item: any) => itemSum + (item.quantity || 0), 0) || 0;
+    
+    const existing = dailySummaryMap.get(dateKey);
+    if (existing) {
+      existing.totalRevenue += sale.total || 0;
+      existing.transactionCount += 1;
+      existing.unitsSold += saleUnits;
+      
+      if (existing.branchBreakdown[sale.branch_id]) {
+        existing.branchBreakdown[sale.branch_id].revenue += sale.total || 0;
+        existing.branchBreakdown[sale.branch_id].count += 1;
+      } else {
+        existing.branchBreakdown[sale.branch_id] = {
+          name: branchName,
+          revenue: sale.total || 0,
+          count: 1
+        };
+      }
+    } else {
+      const branchBreakdown: { [branchId: string]: { name: string; revenue: number; count: number } } = {};
+      branchBreakdown[sale.branch_id] = {
+        name: branchName,
+        revenue: sale.total || 0,
+        count: 1
+      };
+      
+      dailySummaryMap.set(dateKey, {
+        dateStr: dateKey,
+        totalRevenue: sale.total || 0,
+        transactionCount: 1,
+        unitsSold: saleUnits,
+        branchBreakdown
+      });
+    }
+  });
+
+  const dailySummaries = Array.from(dailySummaryMap.values()).sort((a, b) => {
+    return new Date(b.dateStr).getTime() - new Date(a.dateStr).getTime();
+  });
 
   const exportCSV = () => {
     const headers = ['Date', 'Sale ID', 'Branch', 'Cashier', 'Customer', 'Items', 'Total'];
@@ -258,6 +366,168 @@ export default function SalesHistoryTable({ sales, branches, products, profile }
             PDF Audit
           </button>
         </div>
+      </div>
+
+      {/* Running Sales Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* KPI 1: Net Running revenue */}
+        <div className="bg-white p-6 rounded-[2rem] border border-ink/5 shadow-xl shadow-ink/[0.01] flex items-center gap-5">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+            <Coins className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-[10px] font-mono uppercase font-black tracking-widest text-ink/30">Running Net Revenue</p>
+            <p className="text-3xl font-serif font-black text-ink mt-0.5">${currentTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+        </div>
+
+        {/* KPI 2: Artifact Volume Transacted */}
+        <div className="bg-white p-6 rounded-[2rem] border border-ink/5 shadow-xl shadow-ink/[0.01] flex items-center gap-5">
+          <div className="w-12 h-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center">
+            <Package className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-[10px] font-mono uppercase font-black tracking-widest text-ink/30">Artifact Volume Sold</p>
+            <p className="text-3xl font-serif font-black text-ink mt-0.5">{currentTotalUnitsSold.toLocaleString()} <span className="text-xs font-sans text-ink-muted">units</span></p>
+          </div>
+        </div>
+
+        {/* KPI 3: Mean Order Value */}
+        <div className="bg-white p-6 rounded-[2rem] border border-ink/5 shadow-xl shadow-ink/[0.01] flex items-center gap-5">
+          <div className="w-12 h-12 rounded-2xl bg-accent/10 text-accent flex items-center justify-center">
+            <TrendingUp className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-[10px] font-mono uppercase font-black tracking-widest text-ink/30">Total Transactions</p>
+            <p className="text-3xl font-serif font-black text-ink mt-0.5">{currentTotalOrders.toLocaleString()} <span className="text-xs font-sans text-ink-muted">audits</span></p>
+          </div>
+        </div>
+      </div>
+
+      {/* Breakdown by Artifact & Daily sales list view */}
+      <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-2xl shadow-ink/[0.02] p-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-ink/5 pb-4">
+          <div>
+            <h3 className="text-lg font-serif font-bold text-ink">Analytical Breakdown Matrix</h3>
+            <p className="text-[11px] text-ink/40 font-mono uppercase tracking-wider mt-0.5">Statistical insights from active filtered context</p>
+          </div>
+          
+          <div className="flex bg-background p-1 rounded-xl border border-ink/5 w-fit">
+            <button
+              onClick={() => setSummaryTab('artifacts')}
+              className={`px-4 py-2 rounded-lg text-[10px] font-mono font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+                summaryTab === 'artifacts'
+                  ? 'bg-ink text-white shadow-md shadow-ink/10'
+                  : 'text-ink/40 hover:text-ink'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              By Artifact / Product
+            </button>
+            <button
+              onClick={() => setSummaryTab('daily')}
+              className={`px-4 py-2 rounded-lg text-[10px] font-mono font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+                summaryTab === 'daily'
+                  ? 'bg-ink text-white shadow-md shadow-ink/10'
+                  : 'text-ink/40 hover:text-ink'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              Daily Sales Ledger
+            </button>
+          </div>
+        </div>
+
+        {summaryTab === 'artifacts' ? (
+          <div className="space-y-4">
+            {artifactSummaries.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {artifactSummaries.map((art) => {
+                  const percentOfTotal = currentTotalRevenue > 0 
+                    ? ((art.revenue / currentTotalRevenue) * 100).toFixed(1) 
+                    : '0';
+                  return (
+                    <div key={art.id} className="p-4 rounded-xl border border-ink/5 bg-background/30 hover:bg-background transition-all group flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="text-xs font-bold text-ink truncate max-w-[70%]" title={art.name}>
+                            {art.name}
+                          </span>
+                          <span className="text-[9px] font-mono uppercase font-black px-2 py-0.5 bg-primary/10 text-primary rounded-md">
+                            {art.category}
+                          </span>
+                        </div>
+                        <p className="text-[10px] font-mono text-ink-muted">ID: {art.id.slice(0, 8)}</p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-ink/5 flex items-end justify-between">
+                        <div>
+                          <p className="text-[9px] font-mono uppercase tracking-wider text-ink/30">Volume Traded</p>
+                          <p className="text-sm font-bold text-ink">{art.quantity} {art.unit}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[9px] font-mono uppercase tracking-wider text-ink/30">Total Magnitude</p>
+                          <p className="text-lg font-serif font-black text-primary">${art.revenue.toFixed(2)}</p>
+                          <p className="text-[9px] font-mono text-accent font-bold">{percentOfTotal}% of total</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-12 text-center text-ink/30 font-mono text-xs uppercase tracking-widest italic">
+                No active artifact transacted in the current calendar subset.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {dailySummaries.length > 0 ? (
+              <div className="divide-y divide-ink/5">
+                {dailySummaries.map((day) => (
+                  <div key={day.dateStr} className="py-4 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-bold text-ink">{day.dateStr}</span>
+                        {day.dateStr === new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) && (
+                          <span className="text-[8px] font-mono uppercase font-black px-2 py-0.5 bg-accent/10 text-accent rounded-full">Today</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] font-mono text-ink-muted">
+                        {day.transactionCount} Orders • {day.unitsSold} Resource Units Transacted
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-4">
+                      {/* Show branch breakdown for Admins/HQ or multiple branch scopes */}
+                      {isAdmin && Object.keys(day.branchBreakdown).length > 1 && (
+                        <div className="flex flex-wrap gap-2 mr-4 border-r border-ink/5 pr-4 md:max-w-md lg:max-w-xl">
+                          {Object.entries(day.branchBreakdown).map(([branchId, info]) => (
+                            <div key={branchId} className="px-2.5 py-1 bg-ink/5 rounded-lg border border-ink/5 flex items-center gap-1.5 text-[9px] font-mono font-bold text-ink-muted">
+                              <span className="uppercase text-ink h-auto inline">{info.name.split(' ')[0]}</span>
+                              <span className="text-primary">${info.revenue.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div className="text-right">
+                        <p className="text-[9px] font-mono uppercase tracking-wider text-ink/30">Daily Running Revenue</p>
+                        <p className="text-xl font-serif font-black text-ink">${day.totalRevenue.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-12 text-center text-ink/30 font-mono text-xs uppercase tracking-widest italic">
+                No calendar dates match the specified temporal filter.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-2xl shadow-ink/[0.02]">
