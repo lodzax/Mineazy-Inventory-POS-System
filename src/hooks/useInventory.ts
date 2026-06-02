@@ -103,11 +103,31 @@ export function useInventory() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRecovering, setIsRecovering] = useState(false);
   const fetchingRef = React.useRef(false);
 
   // Consolidated Auth and Profile Listener
   useEffect(() => {
     let mounted = true;
+
+    const checkRecoveryIndicators = () => {
+      const hash = window.location.hash || '';
+      const search = window.location.search || '';
+      const href = window.location.href || '';
+      const hasRecoveryMarker = 
+        hash.includes('type=recovery') || 
+        search.includes('type=recovery') ||
+        hash.includes('recovery') ||
+        search.includes('recovery') ||
+        href.includes('recovery') ||
+        (hash.includes('access_token=') && hash.includes('type=')) ||
+        (search.includes('code=') && (href.includes('recovery') || search.includes('type=recovery')));
+
+      if (hasRecoveryMarker) {
+        console.log("[Auth] Recovery indicators confirmed in URL hash/search. Activating recovery modal.");
+        setIsRecovering(true);
+      }
+    };
 
     const initializeAuth = async () => {
       try {
@@ -125,6 +145,7 @@ export function useInventory() {
           const sessionUser = session?.user ?? null;
           setUser(sessionUser);
           setAuthLoading(false);
+          checkRecoveryIndicators();
           if (!sessionUser) {
             setLoading(false);
           }
@@ -145,8 +166,13 @@ export function useInventory() {
 
     initializeAuth();
 
-    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (mounted) {
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsRecovering(true);
+        } else {
+          checkRecoveryIndicators();
+        }
         const newUser = session?.user ?? null;
         setUser(prev => {
           if (prev?.id === newUser?.id) return prev;
@@ -317,7 +343,7 @@ export function useInventory() {
             if (isLimited && userBranch) q = q.eq('branch_id', userBranch.toLowerCase());
             return q as any;
           }),
-          retryableRequest(() => supabase.from('profiles').select('id, email, role') as any)
+          retryableRequest(() => supabase.from('profiles').select('id, email, role, branch_id') as any)
         ]);
         return results;
       };
@@ -1116,6 +1142,24 @@ export function useInventory() {
     }
   };
 
+  const updateUserProfile = async (id: string, updates: { role?: string; branch_id?: string | null }) => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', id)
+        .select();
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No rows were updated (RLS security policy restriction). Please ensure you are logged in as an Administrator and have permission to modify profiles.");
+      }
+      await fetchData();
+    } catch (err: any) {
+      handleSupabaseError(err, OperationType.UPDATE, 'profiles');
+    }
+  };
+
   const updateThreshold = async (branchId: string, productId: string, threshold: number) => {
     if (!user) return;
     try {
@@ -1276,6 +1320,7 @@ export function useInventory() {
     confirmSupplyReceipt,
     processSale,
     updateProduct,
+    updateUserProfile,
     convertMercury,
     transferStock,
     refreshData,
@@ -1283,6 +1328,8 @@ export function useInventory() {
     loading,
     authLoading,
     user,
-    profile
+    profile,
+    isRecovering,
+    setIsRecovering
   };
 }

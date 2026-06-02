@@ -193,7 +193,7 @@ DROP POLICY IF EXISTS "Allow all authenticated users to view profiles" ON profil
 CREATE POLICY "Allow all authenticated users to view profiles" ON profiles FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
-CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id OR get_my_role() = 'Administrator') WITH CHECK (auth.uid() = id OR get_my_role() = 'Administrator');
 
 DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
 CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);

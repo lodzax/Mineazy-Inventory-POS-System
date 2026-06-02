@@ -35,7 +35,9 @@ import {
   FileDown,
   Filter,
   Search,
-  Calendar
+  Calendar,
+  Lock,
+  Key
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useInventory } from './hooks/useInventory';
@@ -47,7 +49,7 @@ import POSView from './components/POSView';
 import SalesHistoryTable from './components/SalesHistoryTable';
 import BranchesView from './components/BranchesView';
 import PurchasingView from './components/PurchasingView';
-import BackupSettings from './components/BackupSettings';
+import SettingsView from './components/SettingsView';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -75,7 +77,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [registrationRole, setRegistrationRole] = useState<'Administrator' | 'Manager' | 'Supervisor' | 'Cashier' | 'Warehouse'>('Cashier');
   const [registrationBranch, setRegistrationBranch] = useState<string>('');
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
@@ -102,6 +104,7 @@ export default function App() {
     processSale,
     updateProduct,
     deleteProduct,
+    updateUserProfile,
     convertMercury,
     addBranch,
     updateBranch,
@@ -113,7 +116,9 @@ export default function App() {
     loading: dataLoading,
     authLoading,
     user,
-    profile // Destructure profile
+    profile, // Destructure profile
+    isRecovering,
+    setIsRecovering
   } = useInventory();
 
   const [newProductName, setNewProductName] = useState('');
@@ -122,6 +127,45 @@ export default function App() {
   const [newProductPrice, setNewProductPrice] = useState('');
   const [newProductCost, setNewProductCost] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
+
+  const [recPass, setRecPass] = useState('');
+  const [recConfirm, setRecConfirm] = useState('');
+  const [recLoading, setRecLoading] = useState(false);
+  const [recError, setRecError] = useState<string | null>(null);
+
+  const handleCompletePasswordRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecError(null);
+    if (recPass.length < 6) {
+      setRecError("Password must be at least 6 characters.");
+      return;
+    }
+    if (recPass !== recConfirm) {
+      setRecError("Passwords do not match.");
+      return;
+    }
+    setRecLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: recPass });
+      if (error) throw error;
+      alert("Your password has been securely updated! You can now use the portal.");
+      setIsRecovering(false);
+      setRecPass('');
+      setRecConfirm('');
+      
+      // Clean up hash or parameters in the URL
+      try {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState(null, '', cleanUrl);
+      } catch (err) {
+        console.warn("Could not clear URL hash params:", err);
+      }
+    } catch (err: any) {
+      setRecError(err.message || "Failed to update password.");
+    } finally {
+      setRecLoading(false);
+    }
+  };
 
 
   useEffect(() => {
@@ -161,6 +205,13 @@ export default function App() {
       if (authMode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+      } else if (authMode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin
+        });
+        if (error) throw error;
+        alert("A password recovery link has been dispatched to your email address successfully.");
+        setAuthMode('signin');
       } else {
         const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
         if (authError) throw authError;
@@ -278,17 +329,19 @@ export default function App() {
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Password</label>
-                <input 
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
-                  placeholder="••••••••"
-                />
-              </div>
+              {authMode !== 'forgot' && (
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Password</label>
+                  <input 
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                    placeholder="••••••••"
+                  />
+                </div>
+              )}
 
               {authMode === 'signup' && (
                 <>
@@ -309,22 +362,22 @@ export default function App() {
                     </select>
                   </div>
 
-          {(registrationRole === 'Supervisor' || registrationRole === 'Cashier' || registrationRole === 'Manager') && (
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Home Branch</label>
-              <select
-                required
-                value={registrationBranch}
-                onChange={(e) => setRegistrationBranch(e.target.value)}
-                className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
-              >
-                <option value="">Select Branch</option>
-                {dbBranches.map((b, idx) => (
-                  <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+                  {(registrationRole === 'Supervisor' || registrationRole === 'Cashier' || registrationRole === 'Manager') && (
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Home Branch</label>
+                      <select
+                        required
+                        value={registrationBranch}
+                        onChange={(e) => setRegistrationBranch(e.target.value)}
+                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                      >
+                        <option value="">Select Branch</option>
+                        {dbBranches.map((b, idx) => (
+                          <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -337,19 +390,47 @@ export default function App() {
                   <CircleGauge className="w-5 h-5 animate-spin" />
                 ) : (
                   <span className="font-bold uppercase tracking-widest text-xs">
-                    {authMode === 'signin' ? 'Access System' : 'Create Account'}
+                    {authMode === 'signin' ? 'Access System' : authMode === 'signup' ? 'Create Account' : 'Send Reset Link'}
                   </span>
                 )}
               </button>
             </form>
 
             <div className="mt-8 text-center">
-              <button 
-                onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
-                className="text-xs text-primary font-bold uppercase tracking-widest hover:underline"
-              >
-                {authMode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-              </button>
+              {authMode === 'signin' ? (
+                <div className="flex flex-col items-center gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setAuthMode('signup')}
+                    className="text-xs text-primary font-bold uppercase tracking-widest hover:underline"
+                  >
+                    Don't have an account? Sign Up
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setAuthMode('forgot')}
+                    className="text-[10px] text-ink/40 font-mono font-bold uppercase tracking-widest hover:text-ink hover:underline"
+                  >
+                    Forgot Password? Reset Here
+                  </button>
+                </div>
+              ) : authMode === 'signup' ? (
+                <button 
+                  type="button"
+                  onClick={() => setAuthMode('signin')}
+                  className="text-xs text-primary font-bold uppercase tracking-widest hover:underline"
+                >
+                  Already have an account? Sign In
+                </button>
+              ) : (
+                <button 
+                  type="button"
+                  onClick={() => setAuthMode('signin')}
+                  className="text-xs text-primary font-bold uppercase tracking-widest hover:underline"
+                >
+                  Remembered? Back to Sign In
+                </button>
+              )}
             </div>
 
             <p className="mt-8 text-center text-[10px] text-ink/40 font-mono italic">
@@ -912,7 +993,12 @@ export default function App() {
                 />
               )}
               {activeTab === 'settings' && (
-                <BackupSettings role={profile?.role || null} />
+                <SettingsView 
+                  profile={profile} 
+                  profiles={profiles} 
+                  branches={dbBranches} 
+                  updateUserProfile={updateUserProfile} 
+                />
               )}
             </motion.div>
           </AnimatePresence>
@@ -921,6 +1007,86 @@ export default function App() {
 
       <AnimatePresence>
         {showScanner && <Scanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+        
+        {isRecovering && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-ink/70 backdrop-blur-md z-[100] flex items-center justify-center p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white max-w-md w-full rounded-[2.5rem] border border-ink/5 p-8 shadow-2xl relative"
+            >
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+                  <Lock className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-medium text-2xl text-ink italic leading-tight">Define Credentials</h3>
+                  <p className="text-[10px] font-mono text-ink/40 uppercase font-bold tracking-widest mt-1">Global Access Security Handshake</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-ink/65 mb-6 leading-relaxed">
+                You have redirected securely via a verification request. Please establish your new secure log-in parameters.
+              </p>
+
+              <form onSubmit={handleCompletePasswordRecovery} className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">New Secure Password</label>
+                  <input 
+                    type="password"
+                    required
+                    value={recPass}
+                    onChange={(e) => setRecPass(e.target.value)}
+                    className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-sm"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Confirm New Password</label>
+                  <input 
+                    type="password"
+                    required
+                    value={recConfirm}
+                    onChange={(e) => setRecConfirm(e.target.value)}
+                    className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-sm"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                {recError && (
+                  <div className="p-3 bg-danger/5 border border-danger/10 text-danger rounded-xl text-xs font-mono text-center">
+                    {recError}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setIsRecovering(false)}
+                    className="flex-1 py-4 border border-ink/5 rounded-2xl text-[10px] font-mono uppercase tracking-widest font-bold text-ink/55 hover:bg-background transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={recLoading}
+                    className="flex-1 py-4 bg-ink text-white rounded-2xl text-[10px] uppercase font-black tracking-widest hover:translate-y-[-2px] active:scale-95 transition-all flex items-center justify-center gap-2 group disabled:opacity-50"
+                  >
+                    <Key className="w-4 h-4 text-accent group-hover:rotate-12 transition-all" />
+                    {recLoading ? "Updating..." : "Save Password"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
