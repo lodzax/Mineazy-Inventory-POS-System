@@ -37,7 +37,8 @@ import {
   Search,
   Calendar,
   Lock,
-  Key
+  Key,
+  ShieldAlert
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useInventory } from './hooks/useInventory';
@@ -213,23 +214,10 @@ export default function App() {
         alert("A password recovery link has been dispatched to your email address successfully.");
         setAuthMode('signin');
       } else {
-        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+        const { error: authError } = await supabase.auth.signUp({ email, password });
         if (authError) throw authError;
 
-        if (authData.user) {
-          // Use upsert to handle the trigger-created profile
-          const { error: profileError } = await supabase.from('profiles').upsert({
-            id: authData.user.id,
-            email,
-            role: registrationRole,
-            branch_id: (registrationRole === 'Supervisor' || registrationRole === 'Cashier' || registrationRole === 'Manager') ? (registrationBranch?.toLowerCase() || null) : null
-          });
-          if (profileError) {
-            console.error("Profile update failed", profileError);
-          }
-        }
-
-        alert("Registration successful! You can now sign in.");
+        alert("Registration successful! Your account has been created and is pending verification by the Administrator.");
         setAuthMode('signin');
       }
     } catch (err: any) {
@@ -343,43 +331,7 @@ export default function App() {
                 </div>
               )}
 
-              {authMode === 'signup' && (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Assigned Role</label>
-                    <select
-                      required
-                      value={registrationRole}
-                      onChange={(e) => setRegistrationRole(e.target.value as any)}
-                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
-                    >
-                      <option value="Cashier">Cashier</option>
-                      <option value="Supervisor">Supervisor</option>
-                      <option value="Purchasing">Purchasing</option>
-                      <option value="Warehouse">Warehouse</option>
-                      <option value="Manager">Manager</option>
-                      <option value="Administrator">Administrator</option>
-                    </select>
-                  </div>
 
-                  {(registrationRole === 'Supervisor' || registrationRole === 'Cashier' || registrationRole === 'Manager') && (
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Home Branch</label>
-                      <select
-                        required
-                        value={registrationBranch}
-                        onChange={(e) => setRegistrationBranch(e.target.value)}
-                        className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono"
-                      >
-                        <option value="">Select Branch</option>
-                        {dbBranches.map((b, idx) => (
-                          <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </>
-              )}
 
               <button 
                 type="submit"
@@ -436,6 +388,151 @@ export default function App() {
             <p className="mt-8 text-center text-[10px] text-ink/40 font-mono italic">
               Protected access for authorized personnel only.
             </p>
+          </div>
+        </motion.div>
+
+        <AnimatePresence>
+          {isRecovering && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-ink/70 backdrop-blur-md z-[100] flex items-center justify-center p-6"
+            >
+              <motion.div 
+                initial={{ scale: 0.95, y: 15 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 15 }}
+                className="bg-white max-w-md w-full rounded-[2.5rem] border border-ink/5 p-8 shadow-2xl relative"
+              >
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+                    <Lock className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif font-medium text-2xl text-ink italic leading-tight">Define Credentials</h3>
+                    <p className="text-[10px] font-mono text-ink/40 uppercase font-bold tracking-widest mt-1">Global Access Security Handshake</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-ink/65 mb-6 leading-relaxed">
+                  You have redirected securely via a verification request. Please establish your new secure log-in parameters.
+                </p>
+
+                <form onSubmit={handleCompletePasswordRecovery} className="space-y-5">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">New Secure Password</label>
+                    <input 
+                      type="password"
+                      required
+                      value={recPass}
+                      onChange={(e) => setRecPass(e.target.value)}
+                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-sm"
+                      placeholder="••••••••"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Confirm New Password</label>
+                    <input 
+                      type="password"
+                      required
+                      value={recConfirm}
+                      onChange={(e) => setRecConfirm(e.target.value)}
+                      className="w-full px-5 py-4 bg-background border border-ink/5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-sm"
+                      placeholder="••••••••"
+                    />
+                  </div>
+
+                  {recError && (
+                    <div className="p-3 bg-danger/5 border border-danger/10 text-danger rounded-xl text-xs font-mono text-center">
+                      {recError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button 
+                      type="button"
+                      onClick={() => setIsRecovering(false)}
+                      className="flex-1 py-4 border border-ink/5 rounded-2xl text-[10px] font-mono uppercase tracking-widest font-bold text-ink/55 hover:bg-background transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit"
+                      disabled={recLoading}
+                      className="flex-1 py-4 bg-ink text-white rounded-2xl text-[10px] uppercase font-black tracking-widest hover:translate-y-[-2px] active:scale-95 transition-all flex items-center justify-center gap-2 group disabled:opacity-50"
+                    >
+                      <Key className="w-4 h-4 text-accent group-hover:rotate-12 transition-all" />
+                      {recLoading ? "Updating..." : "Save Password"}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  // Check if account is verified. If they are logged in but not verified, show a beautiful "Pending Verification" view.
+  if (user && !profile) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6 font-sans">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <CircleGauge className="w-12 h-12 text-primary animate-spin" />
+          <p className="font-mono text-xs uppercase tracking-widest text-primary font-bold">Verifying Profile Authorization...</p>
+          <p className="text-[10px] text-ink/40 font-mono">Securing Gateway Connections</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Administrators are always verified. Other roles must have is_verified === true explicitly.
+  const isProfileVerified = profile?.role === 'Administrator' || profile?.is_verified === true;
+
+  if (user && !isProfileVerified) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6 font-sans">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-md p-10 bg-white rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] relative text-center"
+        >
+          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-8 animate-pulse">
+            <ShieldAlert className="w-10 h-10 text-primary" />
+          </div>
+
+          <h2 className="text-3xl font-serif font-medium text-ink mb-4 italic leading-tight">Verification Pending</h2>
+          <p className="text-[10px] font-mono text-ink/40 uppercase tracking-[0.2em] font-bold mb-6">Security Access Handshake</p>
+
+          <p className="text-sm text-ink/65 leading-relaxed mb-8">
+            Greetings, <span className="font-bold text-ink">{user.email}</span>. Your account registration was successful, but your credentials are currently <span className="font-bold text-primary">Pending Verification</span> by the Administrator.
+          </p>
+
+          <div className="p-4 bg-background border border-ink/5 rounded-2xl text-left mb-8 space-y-2">
+            <h4 className="text-[10px] font-mono uppercase text-ink/40 font-bold">Next Actions Required:</h4>
+            <p className="text-xs text-ink/60 leading-normal">
+              1. An Administrator must confirm your identity.<br />
+              2. You will be assigned your proper authorization role.<br />
+              3. Once verified, refresh this screen to access the portal.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-4 bg-ink text-white rounded-2xl flex items-center justify-center gap-2 hover:translate-y-[-2px] transition-all shadow-md font-bold uppercase tracking-widest text-xs"
+            >
+              Refresh Status
+            </button>
+            <button 
+              onClick={logout}
+              className="w-full py-3 border border-ink/5 rounded-2xl text-[10px] font-mono uppercase tracking-widest font-bold text-ink/50 hover:bg-background transition-colors"
+            >
+              Sign Out / Switch Account
+            </button>
           </div>
         </motion.div>
       </div>

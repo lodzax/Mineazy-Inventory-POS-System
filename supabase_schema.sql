@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   email TEXT NOT NULL,
   role TEXT CHECK (role IN ('Administrator', 'Manager', 'Supervisor', 'Cashier', 'Warehouse', 'Purchasing')) DEFAULT 'Cashier',
   branch_id TEXT REFERENCES branches(id),
+  is_verified BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -193,10 +194,10 @@ DROP POLICY IF EXISTS "Allow all authenticated users to view profiles" ON profil
 CREATE POLICY "Allow all authenticated users to view profiles" ON profiles FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
-CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id OR get_my_role() = 'Administrator') WITH CHECK (auth.uid() = id OR get_my_role() = 'Administrator');
+CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE TO authenticated USING (get_my_role() = 'Administrator') WITH CHECK (get_my_role() = 'Administrator');
 
 DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
-CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id AND role = 'Cashier' AND is_verified = FALSE);
 
 -- Notifications Policies
 DROP POLICY IF EXISTS "Users can view their own notifications" ON notifications;
@@ -236,10 +237,22 @@ CREATE POLICY "Allow all for authenticated users" ON suppliers FOR ALL USING (tr
 -- Trigger to create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
+DECLARE
+  is_first BOOLEAN;
 BEGIN
-  INSERT INTO public.profiles (id, email, role, branch_id)
-  VALUES (new.id, new.email, 'Cashier', NULL)
-  ON CONFLICT (id) DO NOTHING;
+  -- If this is the first user in the DB, make them a verified Administrator, otherwise an unverified Cashier
+  SELECT NOT EXISTS (SELECT 1 FROM public.profiles LIMIT 1) INTO is_first;
+  
+  IF is_first THEN
+    INSERT INTO public.profiles (id, email, role, branch_id, is_verified)
+    VALUES (new.id, new.email, 'Administrator', NULL, TRUE)
+    ON CONFLICT (id) DO NOTHING;
+  ELSE
+    INSERT INTO public.profiles (id, email, role, branch_id, is_verified)
+    VALUES (new.id, new.email, 'Cashier', NULL, FALSE)
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+  
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

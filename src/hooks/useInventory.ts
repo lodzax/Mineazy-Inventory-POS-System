@@ -225,11 +225,27 @@ export function useInventory() {
       try {
         const fetchPromise = supabase
           .from('profiles')
-          .select('id, email, role, branch_id')
+          .select('id, email, role, branch_id, is_verified')
           .eq('id', user.id)
           .maybeSingle();
 
-        const { data: pData, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+        let { data: pData, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+        
+        if (error && (error.message?.includes('is_verified') || error.code?.includes('PGRST') || error.message?.includes('column'))) {
+          console.warn("[fetchProfile] is_verified column missing. Retrying with fallback fields.");
+          const fallbackPromise = supabase
+            .from('profiles')
+            .select('id, email, role, branch_id')
+            .eq('id', user.id)
+            .maybeSingle();
+          const fallbackRes = await Promise.race([fallbackPromise, timeoutPromise]) as any;
+          if (!fallbackRes.error && fallbackRes.data) {
+            pData = { ...fallbackRes.data, is_verified: true };
+            error = null;
+          } else {
+            error = fallbackRes.error;
+          }
+        }
         
         if (error) {
           console.warn('[fetchProfile] Query error:', error.message);
@@ -280,9 +296,31 @@ export function useInventory() {
       return;
     }
 
-    // If we have a user but no profile yet, we allow a fallback to minimal data
-    // instead of blocking the entire app indefinitely.
-    const activeProfile = profile || { role: 'Cashier', branch_id: null };
+    // Halt and deny telemetry and database reads if profile isn't resolved or is unverified
+    if (!profile) {
+      console.log("[fetchData] Profile is not yet resolved. Skipping database telemetry queries.");
+      return;
+    }
+
+    const isVerified = profile.is_verified === true || profile.role === 'Administrator';
+    if (!isVerified) {
+      console.log("[fetchData] Profile is unverified. Denying inventory data querying completely.");
+      setData({
+        branches: [],
+        products: [],
+        inventory: [],
+        transactions: [],
+        orders: [],
+        supplyOrders: [],
+        suppliers: [],
+        sales: [],
+        transfers: []
+      });
+      setLoading(false);
+      return;
+    }
+
+    const activeProfile = profile;
     
     fetchingRef.current = true;
     setError(null);
@@ -343,7 +381,13 @@ export function useInventory() {
             if (isLimited && userBranch) q = q.eq('branch_id', userBranch.toLowerCase());
             return q as any;
           }),
-          retryableRequest(() => supabase.from('profiles').select('id, email, role, branch_id') as any)
+          retryableRequest(async () => {
+            const res = await supabase.from('profiles').select('id, email, role, branch_id, is_verified');
+            if (res.error && (res.error.message?.includes('is_verified') || res.error.code?.includes('PGRST') || res.error.message?.includes('column'))) {
+              return supabase.from('profiles').select('id, email, role, branch_id');
+            }
+            return res;
+          })
         ]);
         return results;
       };
@@ -602,12 +646,30 @@ export function useInventory() {
     
     console.log("[ensureProfile] Fetching profile from DB for ID:", targetUser.id);
     try {
-      // Use a simpler query first
-      const { data: prof, error: profError } = await supabase
+      let prof: any = null;
+      let profError: any = null;
+      
+      const fetchResult = await supabase
         .from('profiles')
-        .select('id, email, role, branch_id')
+        .select('id, email, role, branch_id, is_verified')
         .eq('id', targetUser.id)
         .maybeSingle();
+        
+      if (fetchResult.error && (fetchResult.error.message?.includes('is_verified') || fetchResult.error.code?.includes('PGRST') || fetchResult.error.message?.includes('column'))) {
+        const fallbackResult = await supabase
+          .from('profiles')
+          .select('id, email, role, branch_id')
+          .eq('id', targetUser.id)
+          .maybeSingle();
+        if (!fallbackResult.error && fallbackResult.data) {
+          prof = { ...fallbackResult.data, is_verified: true };
+        } else {
+          profError = fallbackResult.error;
+        }
+      } else {
+        prof = fetchResult.data;
+        profError = fetchResult.error;
+      }
 
       if (profError) {
         console.error("[ensureProfile] Supabase Fetch Error:", profError.message);
@@ -621,23 +683,38 @@ export function useInventory() {
       
       console.log("[ensureProfile] Profile not found, checking if we can create it...");
       
-      // Double check if we are authenticated
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      // Double check if we are authenticated using local session or passed user
+      const { data: { session } } = await supabase.auth.getSession();
+      const authUser = session?.user || targetUser;
       if (!authUser || authUser.id !== targetUser.id) {
         console.error("[ensureProfile] Auth mismatch or no session. Cannot create profile.");
         return null;
       }
 
       console.log("[ensureProfile] Attempting to create missing profile...");
-      const { data: newProf, error: createError } = await supabase
+      let insertPayload: any = {
+        id: targetUser.id,
+        email: targetUser.email || authUser?.email || '',
+        role: 'Cashier',
+        is_verified: false
+      };
+      
+      let { data: newProf, error: createError } = await supabase
         .from('profiles')
-        .insert({
-          id: targetUser.id,
-          email: targetUser.email || authUser.email || '',
-          role: 'Cashier'
-        })
+        .insert(insertPayload)
         .select()
-        .single();
+        .maybeSingle() as any;
+
+      if (createError && (createError.message?.includes('is_verified') || createError.message?.includes('column'))) {
+        delete insertPayload.is_verified;
+        const retryResult = await supabase
+          .from('profiles')
+          .insert(insertPayload)
+          .select()
+          .maybeSingle() as any;
+        newProf = retryResult.data;
+        createError = retryResult.error;
+      }
 
       if (createError) {
         console.error("[ensureProfile] Profile creation failed:", createError.message);
@@ -1142,7 +1219,7 @@ export function useInventory() {
     }
   };
 
-  const updateUserProfile = async (id: string, updates: { role?: string; branch_id?: string | null }) => {
+  const updateUserProfile = async (id: string, updates: { role?: string; branch_id?: string | null; is_verified?: boolean }) => {
     if (!user) return;
     try {
       const { data, error } = await supabase
@@ -1153,6 +1230,9 @@ export function useInventory() {
       if (error) throw error;
       if (!data || data.length === 0) {
         throw new Error("No rows were updated (RLS security policy restriction). Please ensure you are logged in as an Administrator and have permission to modify profiles.");
+      }
+      if (id === user.id) {
+        setProfile(data[0]);
       }
       await fetchData();
     } catch (err: any) {

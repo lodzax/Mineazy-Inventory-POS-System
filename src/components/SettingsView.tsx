@@ -8,7 +8,7 @@ interface SettingsViewProps {
   profile: any;
   profiles: any[];
   branches: any[];
-  updateUserProfile: (id: string, updates: { role?: string; branch_id?: string | null }) => Promise<void>;
+  updateUserProfile: (id: string, updates: { role?: string; branch_id?: string | null; is_verified?: boolean }) => Promise<void>;
 }
 
 export default function SettingsView({ profile, profiles, branches, updateUserProfile }: SettingsViewProps) {
@@ -26,6 +26,7 @@ export default function SettingsView({ profile, profiles, branches, updateUserPr
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editedRole, setEditedRole] = useState<string>('');
   const [editedBranchId, setEditedBranchId] = useState<string>('');
+  const [editedIsVerified, setEditedIsVerified] = useState<boolean>(false);
   const [managementLoading, setManagementLoading] = useState<string | null>(null);
   const [managementSuccess, setManagementSuccess] = useState<string | null>(null);
   const [managementError, setManagementError] = useState<string | null>(null);
@@ -74,7 +75,8 @@ export default function SettingsView({ profile, profiles, branches, updateUserPr
       
       await updateUserProfile(userId, { 
         role: editedRole, 
-        branch_id: targetBranch 
+        branch_id: targetBranch,
+        is_verified: editedIsVerified
       });
 
       setManagementSuccess(`Profile updated for selected user.`);
@@ -255,6 +257,17 @@ export default function SettingsView({ profile, profiles, branches, updateUserPr
                                   )}
                                 </span>
                                 <span className="text-[10px] font-mono text-ink/30 uppercase">ID: {p.id.slice(0, 18)}...</span>
+                                {p.is_verified === false ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-1.5 rounded bg-danger/10 text-danger text-[9px] font-mono uppercase font-black w-fit">
+                                    <ShieldAlert className="w-3 h-3" />
+                                    Pending Verification
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-1.5 rounded bg-accent/10 text-accent text-[9px] font-mono uppercase font-black w-fit">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    Verified Operator
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -262,18 +275,36 @@ export default function SettingsView({ profile, profiles, branches, updateUserPr
                           {/* Role Selection */}
                           <td className="py-5 px-6">
                             {isEditing ? (
-                              <select
-                                value={editedRole}
-                                onChange={(e) => setEditedRole(e.target.value)}
-                                className="px-3 py-2 bg-background border border-ink/5 rounded-xl font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-ink"
-                              >
-                                <option value="Administrator">Administrator</option>
-                                <option value="Manager">Manager</option>
-                                <option value="Supervisor">Supervisor</option>
-                                <option value="Cashier">Cashier</option>
-                                <option value="Warehouse">Warehouse</option>
-                                <option value="Purchasing">Purchasing</option>
-                              </select>
+                              <div className="flex flex-col gap-2">
+                                <select
+                                  value={editedRole}
+                                  onChange={(e) => setEditedRole(e.target.value)}
+                                  className="px-3 py-2 bg-background border border-ink/5 rounded-xl font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-ink"
+                                >
+                                  <option value="Administrator">Administrator</option>
+                                  <option value="Manager">Manager</option>
+                                  <option value="Supervisor">Supervisor</option>
+                                  <option value="Cashier">Cashier</option>
+                                  <option value="Warehouse">Warehouse</option>
+                                  <option value="Purchasing">Purchasing</option>
+                                </select>
+                                
+                                <div className="flex items-center gap-2 mt-1">
+                                  <input 
+                                    type="checkbox"
+                                    id={`is_verified_chk_${p.id}`}
+                                    checked={editedIsVerified}
+                                    onChange={(e) => setEditedIsVerified(e.target.checked)}
+                                    className="rounded border-ink/20 text-accent focus:ring-accent/30 w-3.5 h-3.5 cursor-pointer accent-accent"
+                                  />
+                                  <label 
+                                    htmlFor={`is_verified_chk_${p.id}`}
+                                    className="text-[10px] font-mono font-bold text-ink/50 uppercase cursor-pointer select-none"
+                                  >
+                                    Verify User
+                                  </label>
+                                </div>
+                              </div>
                             ) : (
                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono uppercase font-black ${
                                 p.role === 'Administrator' ? 'bg-ink text-white' :
@@ -346,6 +377,7 @@ export default function SettingsView({ profile, profiles, branches, updateUserPr
                                   setEditingUserId(p.id);
                                   setEditedRole(p.role || 'Cashier');
                                   setEditedBranchId(p.branch_id || '');
+                                  setEditedIsVerified(p.is_verified !== false);
                                 }}
                                 className="px-4 py-1.5 border border-primary/20 hover:bg-primary/10 text-primary font-black text-[10px] uppercase tracking-widest rounded-lg transition-all"
                               >
