@@ -15,7 +15,16 @@ import {
   FileDown,
   Building2,
   Calendar,
-  Layers
+  Layers,
+  TrendingUp,
+  Sparkles,
+  Activity,
+  CheckCircle2,
+  AlertCircle,
+  Inbox,
+  BarChart3,
+  PieChart,
+  ShoppingBag
 } from 'lucide-react';
 import { generateInvoicePDF } from '../lib/invoiceGenerator';
 import { jsPDF } from 'jspdf';
@@ -31,6 +40,7 @@ interface OrdersHistoryTableProps {
   cancelOrder: (orderId: string | number, reason?: string) => void;
   confirmReceipt: (orderId: string | number) => void;
   profile: any;
+  supplyOrders?: any[];
 }
 
 export default function OrdersHistoryTable({ 
@@ -42,12 +52,14 @@ export default function OrdersHistoryTable({
   processOrder, 
   cancelOrder, 
   confirmReceipt, 
-  profile 
+  profile,
+  supplyOrders = []
 }: OrdersHistoryTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
+  const [matrixTab, setMatrixTab] = useState<'branches' | 'products'>('branches');
   
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
@@ -108,6 +120,131 @@ export default function OrdersHistoryTable({
   const sortedOrders = [...filteredOrders].sort((a, b) => (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0));
   const totalPages = Math.ceil(sortedOrders.length / itemsPerPage);
   const paginatedOrders = sortedOrders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // =========================================================
+  // DYNAMIC FILTERED METRICS, ANALYSIS & STATISTICAL INSIGHTS
+  // =========================================================
+  const totalFilteredOrders = sortedOrders.length;
+  const pendingCount = sortedOrders.filter(o => o.status === 'Pending').length;
+  const inTransitCount = sortedOrders.filter(o => o.status === 'In-Transit').length;
+  const receivedCount = sortedOrders.filter(o => o.status === 'Received').length;
+  const cancelledCount = sortedOrders.filter(o => o.status === 'Cancelled').length;
+
+  let totalUnitsRequested = 0;
+  let totalUnitsSupplied = 0;
+  let totalPurchasedUnits = 0;
+
+  const productDemandMap: Record<string, { requested: number; supplied: number; purchased: number }> = {};
+  const branchMetricsMap: Record<string, { total: number; pending: number; inTransit: number; received: number; cancelled: number }> = {};
+
+  // Initialize with zeros for all products so they exist
+  products.forEach(p => {
+    productDemandMap[p.id] = { requested: 0, supplied: 0, purchased: 0 };
+  });
+
+  sortedOrders.forEach(order => {
+    const bId = order.branch_id;
+    if (!branchMetricsMap[bId]) {
+      branchMetricsMap[bId] = { total: 0, pending: 0, inTransit: 0, received: 0, cancelled: 0 };
+    }
+    branchMetricsMap[bId].total += 1;
+    if (order.status === 'Pending') branchMetricsMap[bId].pending += 1;
+    else if (order.status === 'In-Transit') branchMetricsMap[bId].inTransit += 1;
+    else if (order.status === 'Received') branchMetricsMap[bId].received += 1;
+    else if (order.status === 'Cancelled') branchMetricsMap[bId].cancelled += 1;
+
+    order.items?.forEach((it: any) => {
+      const qty = parseFloat(it.quantity) || 0;
+      const supQty = parseFloat(it.suppliedQuantity !== undefined ? it.suppliedQuantity : it.quantity) || 0;
+      
+      totalUnitsRequested += qty;
+      if (order.status !== 'Pending' && order.status !== 'Cancelled') {
+        totalUnitsSupplied += supQty;
+      }
+
+      const pId = it.productId;
+      if (!productDemandMap[pId]) {
+        productDemandMap[pId] = { requested: 0, supplied: 0, purchased: 0 };
+      }
+      productDemandMap[pId].requested += qty;
+      if (order.status !== 'Pending' && order.status !== 'Cancelled') {
+        productDemandMap[pId].supplied += supQty;
+      }
+    });
+  });
+
+  // Calculate units received from purchasing (supplyOrders)
+  supplyOrders.forEach(so => {
+    if (so.status !== 'Received') return;
+
+    // Filter by branch limits
+    if (isLimitedRole && profile?.branch_id && so.destination_branch_id !== profile.branch_id) {
+      return;
+    }
+    if (branchFilter !== 'all' && so.destination_branch_id !== branchFilter) {
+      return;
+    }
+
+    // Filter by date
+    if (dateFilter) {
+      const soDate = so.date_of_supply ? new Date(so.date_of_supply).toISOString().split('T')[0] : '';
+      if (soDate !== dateFilter) {
+        return;
+      }
+    }
+
+    so.items?.forEach((it: any) => {
+      const pId = it.productId;
+      if (!pId) return;
+      const qty = parseFloat(it.quantity) || 0;
+      
+      totalPurchasedUnits += qty;
+
+      if (!productDemandMap[pId]) {
+        productDemandMap[pId] = { requested: 0, supplied: 0, purchased: 0 };
+      }
+      productDemandMap[pId].purchased += qty;
+    });
+  });
+
+  const resolvedCount = receivedCount + cancelledCount;
+  const fulfillmentRate = resolvedCount > 0 
+    ? Math.round((receivedCount / resolvedCount) * 100) 
+    : totalFilteredOrders > 0 
+      ? Math.round((receivedCount / totalFilteredOrders) * 100) 
+      : 100;
+
+  const avgItemsPerOrder = totalFilteredOrders > 0 
+    ? (totalUnitsRequested / totalFilteredOrders).toFixed(1) 
+    : '0.0';
+
+  // Find Peak Demand Branch
+  let peakBranchId = '';
+  let maxBranchOrders = 0;
+  Object.entries(branchMetricsMap).forEach(([bId, metrics]) => {
+    if (metrics.total > maxBranchOrders) {
+      maxBranchOrders = metrics.total;
+      peakBranchId = bId;
+    }
+  });
+  const peakBranch = branches.find(b => b.id === peakBranchId);
+
+  // Find Top Demanded Product
+  let topProductId = '';
+  let maxProductQty = 0;
+  Object.entries(productDemandMap).forEach(([pId, demand]) => {
+    if (demand.requested > maxProductQty) {
+      maxProductQty = demand.requested;
+      topProductId = pId;
+    }
+  });
+  const topProduct = products.find(p => p.id === topProductId);
+
+  // Filter out products with no activity in this context (to keep table concise and relevant)
+  const activeProductEntries = Object.entries(productDemandMap).filter(([_, demand]) => {
+    return demand.requested > 0 || demand.supplied > 0 || demand.purchased > 0;
+  });
+  // =========================================================
 
   const exportToPDF = () => {
     const doc = new jsPDF();
@@ -352,6 +489,266 @@ export default function OrdersHistoryTable({
             </button>
           </div>
         )}
+      </div>
+
+      {/* Dynamic Context Analytics */}
+      <div className="space-y-6 no-print">
+        {/* 1. Metrics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Card 1: Volume */}
+          <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-lg shadow-ink/[0.01] flex items-start gap-4">
+            <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+              <Inbox className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <span className="block text-[10px] font-mono font-black uppercase tracking-widest text-ink/30">Active Context</span>
+              <span className="block text-2xl font-serif font-semibold italic text-ink">{totalFilteredOrders} <span className="text-xs font-mono font-black tracking-tighter not-italic text-ink/40">ORDERS</span></span>
+              <span className="block text-[10px] font-mono text-ink/50 uppercase">{totalUnitsRequested} Total Units Demanded</span>
+            </div>
+          </div>
+
+          {/* Card 2: Pipeline queue */}
+          <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-lg shadow-ink/[0.01] flex items-start gap-4">
+            <div className="p-3 bg-secondary/10 text-secondary rounded-2xl">
+              <Truck className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <span className="block text-[10px] font-mono font-black uppercase tracking-widest text-ink/30">Active Pipeline</span>
+              <span className="block text-2xl font-serif font-semibold italic text-ink">{pendingCount + inTransitCount} <span className="text-xs font-mono font-black tracking-tighter not-italic text-ink/40">QUEUED</span></span>
+              <span className="block text-[10px] font-mono text-ink/50 uppercase">{pendingCount} Pending / {inTransitCount} In Transit</span>
+            </div>
+          </div>
+
+          {/* Card 3: Successfully completed */}
+          <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-lg shadow-ink/[0.01] flex items-start gap-4">
+            <div className="p-3 bg-accent/10 text-accent rounded-2xl">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <span className="block text-[10px] font-mono font-black uppercase tracking-widest text-ink/30">Fulfillments</span>
+              <span className="block text-2xl font-serif font-semibold italic text-ink">{receivedCount} <span className="text-xs font-mono font-black tracking-tighter not-italic text-ink/40">RECEIVED</span></span>
+              <span className="block text-[10px] font-mono text-ink/50 uppercase">{totalUnitsSupplied} Delivered / {totalPurchasedUnits} Procured</span>
+            </div>
+          </div>
+
+          {/* Card 4: Integrity/Fulfillment speed */}
+          <div className="bg-white p-6 rounded-3xl border border-ink/5 shadow-lg shadow-ink/[0.01] flex items-start gap-4">
+            <div className="p-3 bg-warning/10 text-warning rounded-2xl">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <span className="block text-[10px] font-mono font-black uppercase tracking-widest text-ink/30">Integrity Index</span>
+              <span className="block text-2xl font-serif font-semibold italic text-ink">{fulfillmentRate}% <span className="text-xs font-mono font-black tracking-tighter not-italic text-ink/40">RATE</span></span>
+              <span className="block text-[10px] font-mono text-ink/50 uppercase">Avg {avgItemsPerOrder} Items per Order</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Analytical Breakdown Matrix & Insights */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Breakdown Matrix */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-ink/5 shadow-xl shadow-ink/5 flex flex-col h-[32rem]">
+            <div className="flex items-center justify-between border-b border-ink/5 pb-5 mb-6">
+              <div className="flex items-center gap-3">
+                <BarChart3 className="w-5 h-5 text-primary" />
+                <h3 className="text-xl font-serif font-medium text-ink">Breakdown Matrix</h3>
+              </div>
+              <div className="flex bg-background p-1 rounded-xl border border-ink/5">
+                <button
+                  type="button"
+                  onClick={() => setMatrixTab('branches')}
+                  className={`px-4 py-1.5 rounded-lg text-[10px] font-mono font-black uppercase tracking-widest transition-all ${
+                    matrixTab === 'branches' 
+                      ? 'bg-white text-ink shadow-sm' 
+                      : 'text-ink/40 hover:text-ink'
+                  }`}
+                >
+                  Nodes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixTab('products')}
+                  className={`px-4 py-1.5 rounded-lg text-[10px] font-mono font-black uppercase tracking-widest transition-all ${
+                    matrixTab === 'products' 
+                      ? 'bg-white text-ink shadow-sm' 
+                      : 'text-ink/40 hover:text-ink'
+                  }`}
+                >
+                  SKU Demand
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+              {matrixTab === 'branches' ? (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-ink/5 font-mono text-[9px] font-black uppercase tracking-[0.2em] text-ink/30">
+                      <th className="pb-3">Branch Node</th>
+                      <th className="pb-3 text-center">Total</th>
+                      <th className="pb-3 text-center">Pending</th>
+                      <th className="pb-3 text-center text-secondary">In Transit</th>
+                      <th className="pb-3 text-center text-accent">Received</th>
+                      <th className="pb-3 text-right text-danger">Cancelled</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink/[0.03]">
+                    {branches.map(b => {
+                      const metrics = branchMetricsMap[b.id] || { total: 0, pending: 0, inTransit: 0, received: 0, cancelled: 0 };
+                      return (
+                        <tr key={b.id} className="hover:bg-background/40 transition-all text-xs">
+                          <td className="py-3 font-semibold text-ink">{b.name}</td>
+                          <td className="py-3 text-center font-mono font-bold text-ink/60">{metrics.total}</td>
+                          <td className="py-3 text-center font-mono font-bold">
+                            <span className={metrics.pending > 0 ? 'text-warning' : 'text-ink/20'}>{metrics.pending}</span>
+                          </td>
+                          <td className="py-3 text-center font-mono font-bold">
+                            <span className={metrics.inTransit > 0 ? 'text-secondary' : 'text-ink/20'}>{metrics.inTransit}</span>
+                          </td>
+                          <td className="py-3 text-center font-mono font-bold">
+                            <span className={metrics.received > 0 ? 'text-accent' : 'text-ink/20'}>{metrics.received}</span>
+                          </td>
+                          <td className="py-3 text-right font-mono font-bold">
+                            <span className={metrics.cancelled > 0 ? 'text-danger' : 'text-ink/20'}>{metrics.cancelled}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {branches.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-16 text-center text-ink/30 font-mono text-[10px] uppercase">No active nodes listed</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-ink/5 font-mono text-[9px] font-black uppercase tracking-[0.2em] text-ink/30">
+                      <th className="pb-3">Product Name</th>
+                      <th className="pb-3">Category</th>
+                      <th className="pb-3 text-center">Units Demanded</th>
+                      <th className="pb-3 text-center text-accent">Units Dispatched</th>
+                      <th className="pb-3 text-right text-indigo-600">Recv (Purchasing)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink/[0.03]">
+                    {activeProductEntries.map(([pId, demand]) => {
+                      const prod = products.find(p => p.id === pId);
+                      return (
+                        <tr key={pId} className="hover:bg-background/40 transition-all text-xs">
+                          <td className="py-3">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-ink">{prod?.name || pId}</span>
+                              <span className="text-[9px] font-mono text-ink/30 uppercase">{pId.slice(0, 12)}...</span>
+                            </div>
+                          </td>
+                          <td className="py-3 text-ink/50 text-[10px] uppercase font-mono">{prod?.category || 'General'}</td>
+                          <td className="py-3 text-center font-mono font-bold text-ink">{demand.requested}</td>
+                          <td className="py-3 text-center font-mono font-bold text-accent">{demand.supplied}</td>
+                          <td className="py-3 text-right font-mono font-bold text-indigo-600">
+                            {demand.purchased > 0 ? (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-mono font-bold">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                                {demand.purchased}
+                              </span>
+                            ) : (
+                              <span className="text-ink/20">0</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {activeProductEntries.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-16 text-center text-ink/30 font-mono text-[10px] uppercase">No product requests or purchases matching context</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Statistical Insights */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-ink/5 shadow-xl shadow-ink/5 flex flex-col h-[32rem]">
+            <div className="flex items-center gap-3 border-b border-ink/5 pb-5 mb-6">
+              <Sparkles className="w-5 h-5 text-warning" />
+              <h3 className="text-xl font-serif font-medium text-ink">Statistical Insights</h3>
+            </div>
+            
+             <div className="flex-1 space-y-6 overflow-y-auto custom-scrollbar pr-2">
+              {totalFilteredOrders > 0 || totalPurchasedUnits > 0 ? (
+                <>
+                  {totalFilteredOrders > 0 && (
+                    <>
+                      <div className="p-5 bg-primary/5 rounded-2xl border border-primary/10 flex gap-4 items-start">
+                        <Activity className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-mono font-black uppercase tracking-widest text-primary">Peak Demand Driver</h4>
+                          <p className="text-xs text-ink/70 leading-relaxed">
+                            {peakBranch ? (
+                              <>
+                                The node <strong className="text-ink font-semibold">{peakBranch.name}</strong> represents the highest order frequency, driving <strong className="text-ink font-bold">{maxBranchOrders} requisition sequences</strong> ({Math.round((maxBranchOrders / totalFilteredOrders) * 100)}% of the current filtered volume).
+                              </>
+                            ) : (
+                              "Volume is distributed evenly across multiple requesting branch nodes in this context."
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="p-5 bg-secondary/5 rounded-2xl border border-secondary/10 flex gap-4 items-start">
+                        <ShoppingBag className="w-5 h-5 text-secondary shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-mono font-black uppercase tracking-widest text-secondary">Core Inventory Asset</h4>
+                          <p className="text-xs text-ink/70 leading-relaxed">
+                            {topProduct ? (
+                              <>
+                                Demand intensity is focused on <strong className="text-ink font-semibold">{topProduct.name}</strong>, with a cumulative requested volume of <strong className="text-ink font-bold">{maxProductQty} {topProduct.unit || 'units'}</strong> across all active requisitions.
+                              </>
+                            ) : (
+                              "Detailed demand distribution statistics are currently flat or equalized in this context range."
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="p-5 bg-accent/5 rounded-2xl border border-accent/10 flex gap-4 items-start">
+                        <PieChart className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-mono font-black uppercase tracking-widest text-accent">Fulfillment Efficacy</h4>
+                          <p className="text-xs text-ink/70 leading-relaxed">
+                            Of all resolved logistics protocols, <strong className="text-ink font-bold">{fulfillmentRate}%</strong> have reached successful handshakes and are confirmed received. There are currently <strong className="text-ink font-bold">{pendingCount} orders pending</strong> in the queue and <strong className="text-ink font-bold">{inTransitCount} orders in-transit</strong>.
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {totalPurchasedUnits > 0 && (
+                    <div className="p-5 bg-indigo-50 rounded-2xl border border-indigo-100 flex gap-4 items-start">
+                      <TrendingUp className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-mono font-black uppercase tracking-widest text-indigo-600">Purchasing Velocity</h4>
+                        <p className="text-xs text-ink/70 leading-relaxed">
+                          A total of <strong className="text-indigo-700 font-bold">{totalPurchasedUnits} units</strong> have been successfully procured and received from external suppliers in the active context, reinforcing warehouse stock buffers.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-12">
+                  <AlertCircle className="w-10 h-10 text-ink/30 mb-3" />
+                  <p className="font-mono text-[10px] font-black uppercase tracking-[0.2em] max-w-[20rem]">
+                    No enough transactional records or purchases found in active context to formulate statistical insights.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-6 items-center justify-between no-print">

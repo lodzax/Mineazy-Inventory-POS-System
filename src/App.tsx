@@ -1076,6 +1076,7 @@ export default function App() {
                   cancelOrder={cancelOrder}
                   confirmReceipt={confirmReceipt}
                   profile={profile}
+                  supplyOrders={supplyOrders}
                 />
               )}
               {activeTab === 'branches' && (
