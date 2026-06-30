@@ -48,6 +48,7 @@ import Scanner from './components/Scanner';
 import OrdersHistoryTable from './components/OrdersHistoryTable';
 import POSView from './components/POSView';
 import SalesHistoryTable from './components/SalesHistoryTable';
+import InventoryHistoryView from './components/InventoryHistoryView';
 import BranchesView from './components/BranchesView';
 import PurchasingView from './components/PurchasingView';
 import SettingsView from './components/SettingsView';
@@ -174,7 +175,7 @@ export default function App() {
       setActiveTab('pos');
     } else if (profile?.role === 'Purchasing' && activeTab !== 'purchasing') {
       setActiveTab('purchasing');
-    } else if (profile?.role === 'Warehouse' && (activeTab === 'dashboard' || activeTab === 'inventory' || activeTab === 'pos' || activeTab === 'sales_history' || activeTab === 'history')) {
+    } else if (profile?.role === 'Warehouse' && (activeTab === 'dashboard' || activeTab === 'inventory' || activeTab === 'pos' || activeTab === 'sales_history')) {
       setActiveTab('orders_history');
     } else if (profile?.role === 'Supervisor' && (activeTab === 'dashboard' || activeTab === 'branches' || activeTab === 'settings')) {
       // Supervisors can access inventory, but not dashboard, branches or settings
@@ -607,12 +608,12 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
           )}
-          {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+          {(profile?.role === 'Administrator' || profile?.role === 'Manager' || profile?.role === 'Supervisor' || profile?.role === 'Warehouse') && (
             <NavItem 
               active={activeTab === 'history'} 
               onClick={() => setActiveTab('history')} 
               icon={<History className="w-5 h-5" />} 
-              label="Transaction Logs" 
+              label="Inventory History" 
               collapsed={isSidebarCollapsed}
             />
           )}
@@ -755,12 +756,12 @@ export default function App() {
                     label="Inventory" 
                   />
                 )}
-                {(profile?.role === 'Administrator' || profile?.role === 'Manager') && (
+                {(profile?.role === 'Administrator' || profile?.role === 'Manager' || profile?.role === 'Supervisor' || profile?.role === 'Warehouse') && (
                   <NavItem 
                     active={activeTab === 'history'} 
                     onClick={() => { setActiveTab('history'); setIsSidebarOpen(false); }} 
                     icon={<History className="w-5 h-5" />} 
-                    label="Transactions" 
+                    label="Inventory History" 
                   />
                 )}
                 {(profile?.role === 'Cashier' || profile?.role === 'Supervisor' || profile?.role === 'Manager' || profile?.role === 'Administrator') && (
@@ -1045,7 +1046,13 @@ export default function App() {
                 />
               )}
               {activeTab === 'history' && (
-                <HistoryTable transactions={transactions} branches={dbBranches} products={dbProducts} profile={profile} />
+                <InventoryHistoryView 
+                  transactions={transactions} 
+                  inventory={inventory} 
+                  branches={dbBranches} 
+                  products={dbProducts} 
+                  profile={profile} 
+                />
               )}
               {activeTab === 'pos' && profile?.role !== 'Warehouse' && (
                 <POSView 
@@ -1219,329 +1226,5 @@ function NavItem({ active, onClick, icon, label, collapsed }: { active: boolean,
   );
 }
 
-function HistoryTable({ transactions, branches, products, profile }: { transactions: any[], branches: any[], products: any[], profile: any }) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [filterBranch, setFilterBranch] = useState<string>('all');
-  const [filterProduct, setFilterProduct] = useState<string>('all');
-  const [filterType, setFilterType] = useState<string>('all');
-  const [filterDate, setFilterDate] = useState<string>('');
-  
-  const itemsPerPage = 15;
-
-  const isAdmin = profile?.role === 'Administrator';
-  const userBranchId = profile?.branch_id;
-
-  // Filter logic
-  const filtered = transactions.filter(tx => {
-    // Branch boundary check
-    if (!isAdmin && tx.branch_id !== userBranchId) return false;
-
-    if (filterBranch !== 'all' && tx.branch_id !== filterBranch) return false;
-    if (filterProduct !== 'all' && tx.product_id !== filterProduct) return false;
-    if (filterType !== 'all' && tx.type !== filterType) return false;
-    if (filterDate) {
-      const txDate = new Date(tx.timestamp).toISOString().split('T')[0];
-      if (txDate !== filterDate) return false;
-    }
-    return true;
-  });
-
-  const sorted = [...filtered].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  
-  const totalPages = Math.ceil(sorted.length / itemsPerPage);
-  const paginatedData = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  const exportToPDF = () => {
-    const doc = new jsPDF();
-    
-    // Add Header
-    doc.setFontSize(20);
-    doc.setFont('helvetica', 'bold');
-    doc.text('STOCK MANAGEMENT TRANSACTION LOGS', 105, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 105, 28, { align: 'center' });
-    
-    // Add Active Filters info
-    let filterString = "Filters: ";
-    if (filterBranch !== 'all') filterString += `Branch: ${branches.find(b => b.id === filterBranch)?.name || filterBranch} | `;
-    if (filterProduct !== 'all') filterString += `Product: ${products.find(p => p.id === filterProduct)?.name || filterProduct} | `;
-    if (filterType !== 'all') filterString += `Type: ${filterType} | `;
-    if (filterDate) filterString += `Date: ${filterDate} | `;
-    if (filterString === "Filters: ") filterString += "None";
-    
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    doc.text(filterString, 105, 35, { align: 'center' });
-
-    const tableData = sorted.map(tx => {
-      const branch = branches.find(b => b.id === tx.branch_id);
-      const product = products.find(p => p.id === tx.product_id);
-      return [
-        new Date(tx.timestamp).toLocaleString(),
-        tx.type.toUpperCase(),
-        branch?.name || tx.branch_id,
-        product?.name || tx.product_id,
-        tx.notes || '-',
-        `${tx.type === 'add' ? '+' : '-'}${tx.amount}`
-      ];
-    });
-
-    autoTable(doc, {
-      startY: 40,
-      head: [['Timestamp', 'Type', 'Branch', 'Product', 'Notes', 'Amount']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [30, 30, 30], textColor: [255, 255, 255], fontStyle: 'bold' },
-      styles: { fontSize: 8 },
-      columnStyles: {
-        5: { halign: 'right', fontStyle: 'bold' }
-      }
-    });
-
-    doc.save(`transaction_logs_${new Date().toISOString().split('T')[0]}.pdf`);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white p-8 rounded-[2.5rem] border border-ink/5 shadow-xl shadow-ink/5 no-print">
-        <div className="flex items-center gap-3 mb-6">
-          <Filter className="w-5 h-5 text-primary" />
-          <h3 className="text-xl font-serif font-medium">Refine Logs</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {isAdmin && (
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By Node</label>
-              <div className="relative">
-                <select 
-                  value={filterBranch}
-                  onChange={(e) => { setFilterBranch(e.target.value); setCurrentPage(1); }}
-                  className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
-                >
-                  <option value="all">All Branches</option>
-                  {branches.map((b, idx) => (
-                    <option key={`${b.id}-${idx}`} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">By Resource</label>
-            <div className="relative">
-              <select 
-                value={filterProduct}
-                onChange={(e) => { setFilterProduct(e.target.value); setCurrentPage(1); }}
-                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
-              >
-                <option value="all">All Products</option>
-                {products.map((p, idx) => (
-                  <option key={`${p.id}-${idx}`} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              <Package className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Operation Type</label>
-            <div className="relative">
-              <select 
-                value={filterType}
-                onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
-                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs appearance-none"
-              >
-                <option value="all">Any Operation</option>
-                <option value="add">Addition (+)</option>
-                <option value="subtract">Subtraction (-)</option>
-                <option value="transfer">Transfer</option>
-                <option value="sale">Point of Sale</option>
-                <option value="restock">Restock</option>
-              </select>
-              <ArrowRightLeft className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-mono uppercase text-ink/40 font-bold ml-1">Specific Date</label>
-            <div className="relative">
-              <input 
-                type="date"
-                value={filterDate}
-                onChange={(e) => { setFilterDate(e.target.value); setCurrentPage(1); }}
-                className="w-full pl-10 pr-6 py-3 bg-background border border-ink/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono text-xs"
-              />
-              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/30" />
-            </div>
-          </div>
-        </div>
-
-        {(filterBranch !== 'all' || filterProduct !== 'all' || filterType !== 'all' || filterDate) && (
-          <div className="mt-6 flex justify-end">
-            <button 
-              onClick={() => {
-                setFilterBranch('all');
-                setFilterProduct('all');
-                setFilterType('all');
-                setFilterDate('');
-                setCurrentPage(1);
-              }}
-              className="text-[10px] font-mono font-black uppercase tracking-widest text-primary hover:underline flex items-center gap-2"
-            >
-              <X className="w-3 h-3" />
-              Reset All Filters
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-6 items-center justify-between px-2">
-        <div className="h-px flex-1 bg-ink/5 hidden md:block" />
-        <div className="flex items-center gap-3 no-print">
-          <button 
-            onClick={exportToPDF}
-            className="px-8 py-4 bg-primary text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
-          >
-            <FileDown className="w-4 h-4" />
-            <span>Export PDF</span>
-          </button>
-          <button 
-            onClick={() => { window.focus(); window.print(); }}
-            className="px-8 py-4 bg-ink text-white border border-ink/5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 hover:translate-y-[-2px] transition-all shadow-xl active:scale-95"
-          >
-            <Printer className="w-4 h-4 text-primary" />
-            <span>Print Audit</span>
-          </button>
-        </div>
-      </div>
-      <div className="bg-white rounded-[2.5rem] border border-ink/5 overflow-hidden shadow-xl shadow-ink/5">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-ink/5 bg-background font-mono text-[9px] uppercase text-ink/40 font-bold tracking-[0.2em]">
-                <th className="px-8 py-6">Time Cycle</th>
-                <th className="px-8 py-6">Operation</th>
-                <th className="px-8 py-6">Node</th>
-                <th className="px-8 py-6">Resource</th>
-                <th className="px-8 py-6">Notes</th>
-                <th className="px-8 py-6 text-right">Magnitude</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink/[0.03]">
-              {paginatedData.map((tx, idx) => {
-                const branch = branches.find(b => b.id === tx.branch_id);
-                const product = products.find(p => p.id === tx.product_id);
-                return (
-                  <tr key={`${tx.id || 'tx'}-${idx}`} className="text-sm hover:bg-background/50 transition-colors group">
-                    <td className="px-8 py-5">
-                      <div className="flex flex-col">
-                        <span className="font-mono text-[11px] text-ink/60 font-bold">
-                          {tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                        </span>
-                        <span className="text-[10px] text-ink/30 font-mono">
-                          {tx.timestamp ? new Date(tx.timestamp).toLocaleDateString() : 'Pending'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5">
-                      <span className={`text-[10px] font-mono font-black uppercase px-2 py-1 rounded-md ${
-                        tx.type === 'add' ? 'bg-accent/10 text-accent' : 'bg-danger/10 text-danger'
-                      }`}>
-                        {tx.type}
-                      </span>
-                    </td>
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-primary/40" />
-                        <span className="font-bold text-ink/80 text-xs">{branch?.name || tx.branch_id}</span>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5 text-ink/70 text-xs font-medium">{product?.name || tx.product_id}</td>
-                    <td className="px-8 py-5">
-                      <p className="text-[10px] text-ink/50 max-w-xs truncate font-medium italic" title={tx.notes}>
-                        {tx.notes || '-'}
-                      </p>
-                    </td>
-                    <td className={`px-8 py-5 text-right font-mono font-bold text-base tracking-tighter ${
-                      tx.type === 'add' ? 'text-accent' : 'text-danger'
-                    }`}>
-                      {tx.type === 'add' ? '+' : '-'}{tx.amount}
-                    </td>
-                  </tr>
-                );
-              })}
-              {sorted.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center text-ink/30 font-serif italic text-lg">
-                    Zero movement detected in system logs.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between px-8 py-4 bg-white rounded-3xl border border-ink/5 shadow-sm">
-          <p className="text-[10px] font-mono font-bold text-ink/40 uppercase tracking-widest">
-            Showing <span className="text-ink">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="text-ink">{Math.min(currentPage * itemsPerPage, sorted.length)}</span> of <span className="text-ink">{sorted.length}</span> entries
-          </p>
-          <div className="flex items-center gap-2">
-            <button 
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              className="p-2 hover:bg-background rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <div className="flex items-center gap-1">
-              {[...Array(totalPages)].map((_, i) => {
-                const pageNum = i + 1;
-                // Show pages around current page if there are many pages
-                if (
-                  totalPages > 7 &&
-                  pageNum !== 1 &&
-                  pageNum !== totalPages &&
-                  (pageNum < currentPage - 1 || pageNum > currentPage + 1)
-                ) {
-                  if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
-                    return <span key={`dots-${pageNum}`} className="text-ink/20">...</span>;
-                  }
-                  return null;
-                }
-
-                return (
-                  <button
-                    key={`page-${pageNum}`}
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`min-w-8 h-8 rounded-xl font-mono text-[10px] font-bold transition-all ${
-                      currentPage === pageNum 
-                        ? 'bg-ink text-white shadow-lg' 
-                        : 'text-ink/40 hover:bg-background hover:text-ink'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-            <button 
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              className="p-2 hover:bg-background rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// Old inline HistoryTable removed. Fully migrated to /src/components/InventoryHistoryView.tsx
 
