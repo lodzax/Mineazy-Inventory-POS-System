@@ -53,7 +53,10 @@ const PRODUCT_COLORS = [
   '#CA8A04', // Yellow-600
 ];
 
-const getProductColor = (index: number) => {
+const getProductColor = (index: number, productName?: string) => {
+  if (productName && (productName.toLowerCase().includes('battery') || productName.toLowerCase().includes('batteries'))) {
+    return '#EAB308'; // Tailwind yellow-500
+  }
   return PRODUCT_COLORS[index % PRODUCT_COLORS.length];
 };
 
@@ -805,7 +808,7 @@ export default function InventoryHistoryView({
               >
                 <defs>
                   {trackedProducts.map((prod, idx) => {
-                    const color = getProductColor(idx);
+                    const color = getProductColor(idx, prod.name);
                     return (
                       <linearGradient key={`grad-${prod.id}`} id={`color-${prod.id}`} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={color} stopOpacity={0.12}/>
@@ -842,7 +845,7 @@ export default function InventoryHistoryView({
                           </p>
                           <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
                             {trackedProducts.map((prod, idx) => {
-                              const color = getProductColor(idx);
+                              const color = getProductColor(idx, prod.name);
                               const stockVal = data[prod.id] ?? 0;
                               const addedVal = data[`${prod.id}_added`] ?? 0;
                               const removedVal = data[`${prod.id}_removed`] ?? 0;
@@ -892,7 +895,7 @@ export default function InventoryHistoryView({
                   }}
                 />
                 {trackedProducts.map((prod, idx) => {
-                  const color = getProductColor(idx);
+                  const color = getProductColor(idx, prod.name);
                   return (
                     <Area 
                       key={prod.id}
