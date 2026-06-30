@@ -38,6 +38,25 @@ import {
   Legend 
 } from 'recharts';
 
+const PRODUCT_COLORS = [
+  '#18181B', // Zinc-900 (primary style)
+  '#2563EB', // Blue-600
+  '#16A34A', // Green-600
+  '#D97706', // Amber-600
+  '#7C3AED', // Purple-600
+  '#E11D48', // Rose-600
+  '#0891B2', // Cyan-600
+  '#EA580C', // Orange-600
+  '#0D9488', // Teal-600
+  '#DB2777', // Pink-600
+  '#4F46E5', // Indigo-600
+  '#CA8A04', // Yellow-600
+];
+
+const getProductColor = (index: number) => {
+  return PRODUCT_COLORS[index % PRODUCT_COLORS.length];
+};
+
 interface InventoryHistoryViewProps {
   transactions: any[];
   inventory: any[];
@@ -168,81 +187,114 @@ export default function InventoryHistoryView({
     });
   }, [inventory, activeBranchFilter, filterProduct]);
 
-  // Reconstruct daily historical closing stock
+  // List of products that we are currently tracking/filtering
+  const trackedProducts = useMemo(() => {
+    return products.filter(p => 
+      filterProduct === 'all' || p.id?.toLowerCase() === filterProduct.toLowerCase()
+    );
+  }, [products, filterProduct]);
+
+  // Reconstruct daily historical closing stock per product/artifact
   const timelineData = useMemo(() => {
     const { dates, startDate } = dateRange;
     if (dates.length === 0) return [];
 
-    // Current inventory total matching filters
-    const currentTotalStock = filteredCurrentStocks.reduce((sum, item) => sum + (Number(item.stock) || 0), 0);
+    // Prepare running state and transactions for each tracked product
+    const productStates = trackedProducts.map(prod => {
+      // Current inventory for this product matching active branch filter
+      const currentProductStocks = inventory.filter(item => 
+        item.product_id?.toLowerCase() === prod.id?.toLowerCase() &&
+        (activeBranchFilter === 'all' || item.branch_id?.toLowerCase() === activeBranchFilter)
+      );
+      const currentStock = currentProductStocks.reduce((sum, item) => sum + (Number(item.stock) || 0), 0);
 
-    // Filter transactions occurring from startDate till now to reverse
-    const allTxsForReverse = transactions.filter(tx => {
-      if (activeBranchFilter !== 'all' && tx.branch_id?.toLowerCase() !== activeBranchFilter) {
-        return false;
-      }
-      if (filterProduct !== 'all' && tx.product_id?.toLowerCase() !== filterProduct.toLowerCase()) {
-        return false;
-      }
-      if (!tx.timestamp) return false;
-      return tx.timestamp.split('T')[0] >= startDate;
-    });
+      // Filter transactions occurring from startDate till now for this product to reverse
+      const txsForReverse = transactions.filter(tx => {
+        if (activeBranchFilter !== 'all' && tx.branch_id?.toLowerCase() !== activeBranchFilter) {
+          return false;
+        }
+        if (tx.product_id?.toLowerCase() !== prod.id?.toLowerCase()) {
+          return false;
+        }
+        if (!tx.timestamp) return false;
+        return tx.timestamp.split('T')[0] >= startDate;
+      });
 
-    // Walk backward to start of period
-    let initialStock = currentTotalStock;
-    allTxsForReverse.forEach(tx => {
-      const amt = Number(tx.amount) || 0;
-      if (tx.type === 'add') {
-        initialStock -= amt;
-      } else if (tx.type === 'remove' || tx.type === 'subtract' || tx.type === 'sale') {
-        initialStock += amt;
-      }
-    });
-
-    // Walk forward day-by-day to capture chronological stock levels
-    const txsByDay: Record<string, any[]> = {};
-    allTxsForReverse.forEach(tx => {
-      const day = tx.timestamp.split('T')[0];
-      if (!txsByDay[day]) txsByDay[day] = [];
-      txsByDay[day].push(tx);
-    });
-
-    const chartPoints: any[] = [];
-    let runningStock = initialStock;
-
-    dates.forEach(day => {
-      const dayTxs = txsByDay[day] || [];
-      let added = 0;
-      let removed = 0;
-
-      dayTxs.forEach(tx => {
+      // Walk backward to start of period
+      let initialStock = currentStock;
+      txsForReverse.forEach(tx => {
         const amt = Number(tx.amount) || 0;
         if (tx.type === 'add') {
-          runningStock += amt;
-          added += amt;
+          initialStock -= amt;
         } else if (tx.type === 'remove' || tx.type === 'subtract' || tx.type === 'sale') {
-          runningStock -= amt;
-          removed += amt;
+          initialStock += amt;
         }
       });
 
-      // Clamp stock to non-negative
-      runningStock = Math.max(0, runningStock);
+      // Index transactions by day
+      const txsByDay: Record<string, any[]> = {};
+      txsForReverse.forEach(tx => {
+        const day = tx.timestamp.split('T')[0];
+        if (!txsByDay[day]) txsByDay[day] = [];
+        txsByDay[day].push(tx);
+      });
 
+      return {
+        product: prod,
+        runningStock: initialStock,
+        txsByDay
+      };
+    });
+
+    const chartPoints: any[] = [];
+
+    dates.forEach(day => {
       const dayName = new Date(day).toLocaleDateString([], { month: 'short', day: 'numeric' });
-
-      chartPoints.push({
+      const point: any = {
         date: day,
         name: dayName,
-        stock: runningStock,
-        added,
-        removed,
-        netFlow: added - removed
+        totalStock: 0,
+        added: 0,
+        removed: 0
+      };
+
+      productStates.forEach(state => {
+        const dayTxs = state.txsByDay[day] || [];
+        let addedVal = 0;
+        let removedVal = 0;
+
+        dayTxs.forEach(tx => {
+          const amt = Number(tx.amount) || 0;
+          if (tx.type === 'add') {
+            state.runningStock += amt;
+            addedVal += amt;
+          } else if (tx.type === 'remove' || tx.type === 'subtract' || tx.type === 'sale') {
+            state.runningStock -= amt;
+            removedVal += amt;
+          }
+        });
+
+        // Clamp stock to non-negative
+        state.runningStock = Math.max(0, state.runningStock);
+
+        // Store specific product data
+        point[state.product.id] = state.runningStock;
+        point[`${state.product.id}_added`] = addedVal;
+        point[`${state.product.id}_removed`] = removedVal;
+
+        point.totalStock += state.runningStock;
+        point.added += addedVal;
+        point.removed += removedVal;
       });
+
+      point.stock = point.totalStock; // compatibility with aggregate stats/graphs
+      point.netFlow = point.added - point.removed;
+
+      chartPoints.push(point);
     });
 
     return chartPoints;
-  }, [dateRange, transactions, filteredCurrentStocks, activeBranchFilter, filterProduct]);
+  }, [dateRange, transactions, inventory, activeBranchFilter, trackedProducts]);
 
   // Computes statistics and statistical insights from the active filtered context
   const stats = useMemo(() => {
@@ -752,10 +804,15 @@ export default function InventoryHistoryView({
                 margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
               >
                 <defs>
-                  <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#18181B" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#18181B" stopOpacity={0.0}/>
-                  </linearGradient>
+                  {trackedProducts.map((prod, idx) => {
+                    const color = getProductColor(idx);
+                    return (
+                      <linearGradient key={`grad-${prod.id}`} id={`color-${prod.id}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={color} stopOpacity={0.12}/>
+                        <stop offset="95%" stopColor={color} stopOpacity={0.0}/>
+                      </linearGradient>
+                    );
+                  })}
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#18181b08" />
                 <XAxis 
@@ -774,29 +831,43 @@ export default function InventoryHistoryView({
                   dx={-10}
                 />
                 <Tooltip 
-                  content={({ active, payload, label }: any) => {
+                  content={({ active, payload }: any) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       return (
-                        <div className="bg-zinc-900 text-white p-4 rounded-2xl border border-white/10 shadow-2xl backdrop-blur-md font-mono text-[10px]">
-                          <p className="font-bold text-white/50 mb-2 border-b border-white/10 pb-1">{data.date}</p>
-                          <div className="space-y-1">
-                            <p className="flex justify-between gap-6">
-                              <span>STOCK LEVEL:</span>
-                              <span className="font-bold text-white text-xs">{data.stock} units</span>
-                            </p>
-                            <p className="flex justify-between gap-6 text-emerald-400">
-                              <span>ADDED (+):</span>
-                              <span className="font-bold">+{data.added}</span>
-                            </p>
-                            <p className="flex justify-between gap-6 text-red-400">
-                              <span>REMOVED (-):</span>
-                              <span className="font-bold">-{data.removed}</span>
-                            </p>
-                            <p className="flex justify-between gap-6 border-t border-white/5 pt-1 font-bold text-zinc-300">
-                              <span>NET FLOW:</span>
-                              <span>{data.netFlow >= 0 ? '+' : ''}{data.netFlow}</span>
-                            </p>
+                        <div className="bg-zinc-900/95 text-white p-4 rounded-2xl border border-white/10 shadow-2xl backdrop-blur-md font-mono text-[10px] min-w-[200px] max-w-xs md:max-w-md">
+                          <p className="font-bold text-white/50 mb-2 border-b border-white/10 pb-1 flex justify-between">
+                            <span>{new Date(data.date).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            <span className="text-emerald-400">Net: {data.netFlow >= 0 ? '+' : ''}{data.netFlow}</span>
+                          </p>
+                          <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                            {trackedProducts.map((prod, idx) => {
+                              const color = getProductColor(idx);
+                              const stockVal = data[prod.id] ?? 0;
+                              const addedVal = data[`${prod.id}_added`] ?? 0;
+                              const removedVal = data[`${prod.id}_removed`] ?? 0;
+                              return (
+                                <div key={prod.id} className="flex flex-col gap-0.5 border-b border-white/5 pb-1 last:border-0 last:pb-0">
+                                  <div className="flex justify-between items-center gap-4">
+                                    <span className="flex items-center gap-1.5 font-bold truncate max-w-[120px]" style={{ color }}>
+                                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                                      {prod.name}
+                                    </span>
+                                    <span className="font-bold text-zinc-100">{stockVal} {prod.unit || 'units'}</span>
+                                  </div>
+                                  {(addedVal > 0 || removedVal > 0) && (
+                                    <div className="flex gap-2 text-[9px] text-white/40 pl-3">
+                                      {addedVal > 0 && <span className="text-emerald-400">+{addedVal}</span>}
+                                      {removedVal > 0 && <span className="text-red-400">-{removedVal}</span>}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-white/10 flex justify-between font-bold text-white text-xs">
+                            <span>TOTAL STOCK:</span>
+                            <span>{data.stock} units</span>
                           </div>
                         </div>
                       );
@@ -804,15 +875,38 @@ export default function InventoryHistoryView({
                     return null;
                   }}
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="stock" 
-                  stroke="#18181B" 
-                  strokeWidth={2} 
-                  fillOpacity={1} 
-                  fill="url(#colorStock)" 
-                  name="Inventory Units"
+                <Legend 
+                  verticalAlign="top" 
+                  height={44} 
+                  content={({ payload }: any) => {
+                    return (
+                      <div className="flex flex-wrap gap-x-4 gap-y-2 pb-4 text-[10px] font-mono uppercase tracking-wider text-ink/60">
+                        {payload.map((entry: any, index: number) => (
+                          <div key={`item-${index}`} className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                            <span className="font-bold">{entry.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }}
                 />
+                {trackedProducts.map((prod, idx) => {
+                  const color = getProductColor(idx);
+                  return (
+                    <Area 
+                      key={prod.id}
+                      type="monotone" 
+                      dataKey={prod.id} 
+                      stroke={color} 
+                      strokeWidth={2} 
+                      fillOpacity={1} 
+                      fill={`url(#color-${prod.id})`} 
+                      name={prod.name}
+                      activeDot={{ r: 5 }}
+                    />
+                  );
+                })}
               </AreaChart>
             </ResponsiveContainer>
           </div>
